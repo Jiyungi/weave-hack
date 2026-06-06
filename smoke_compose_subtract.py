@@ -137,8 +137,23 @@ def main() -> None:
     print("\n[2/3] composing (grant) and subtracting (revoke)")
     s_a = SignedLogMaskState.load(path_a)
     s_b = SignedLogMaskState.load(path_b)
-    s_add = compose_states([s_a, s_b], weights=[1.0, 1.0])      # grant both
-    s_sub = compose_states([s_add, s_b], weights=[1.0, -1.0])   # revoke B
+
+    # Composition sums signed log-gates on shared (layer, channel) keys and
+    # clips to max_log_gate. If we leave the default (= max of the inputs), the
+    # sum on overlapping gates gets clipped and the larger-magnitude skill wins,
+    # silently suppressing the weaker one. Give the composed controller enough
+    # log-headroom to represent the worst-case |sum| — this is lossless, since
+    # gate = max_log_gate * tanh(raw) reproduces the intended value exactly when
+    # max_log_gate >= |sum|.
+    def headroom(states_, weights_) -> float:
+        return sum(abs(w) * float(s.max_log_gate) for w, s in zip(weights_, states_))
+
+    w_add = [1.0, 1.0]
+    s_add = compose_states([s_a, s_b], weights=w_add,
+                           max_log_gate=headroom([s_a, s_b], w_add))      # grant both
+    w_sub = [1.0, -1.0]
+    s_sub = compose_states([s_add, s_b], weights=w_sub,
+                           max_log_gate=headroom([s_add, s_b], w_sub))    # revoke B
     path_add = WORK / "controller_A+B.pt"
     path_sub = WORK / "controller_(A+B)-B.pt"
     s_add.save(path_add)
