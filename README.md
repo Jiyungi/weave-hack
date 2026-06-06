@@ -90,9 +90,14 @@ PEFT_CMP_MODEL=Qwen/Qwen2.5-7B SMOKE_STEPS=600 SMOKE_MAX_LOG_GATE=0.1 \
 # Track A — controller engine
 uvicorn controller_service:app --host 0.0.0.0 --port 8000
 
-# Track B — control plane
+# Track B — control plane (also serves the Track C dashboard at its root URL)
 uvicorn control_plane_service:app --host 0.0.0.0 --port 8100
 ```
+
+Track C is a single-file governance dashboard served by the control plane at
+`/` (port 8100): seed skills + policies, open sessions, run the act console
+(allowed vs **blocked** calls), revoke, and watch the audit feed live. Open the
+control plane's URL in a browser — no separate build step.
 
 ### Run the verifications (third shell)
 
@@ -125,6 +130,7 @@ The `gates=10000 / max_log_gate=0.1 / steps=600 / lr=8e-3` defaults are smoke-va
 engine/                 Track A: config, model, controllers, evals, schemas, api
 controller_service.py   Track A entrypoint (uvicorn target)
 control_plane/          Track B: config, track_a client, runtime guard, audit, store, schemas, api
+control_plane/static/dashboard.html  Track C: single-file governance dashboard (served at /)
 control_plane_service.py  Track B entrypoint (uvicorn target)
 smoke_compose_subtract.py Operations smoke (compose/subtract/reversibility)
 verify_service.py         Track A HTTP verification

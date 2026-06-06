@@ -4,8 +4,10 @@ Run:  uvicorn control_plane_service:app --host 0.0.0.0 --port 8100
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from . import config, store
 from .audit import audit
@@ -15,6 +17,14 @@ from .schemas import (ActReq, PersonalizeReq, PolicyReq, RegisterSkillReq,
                       RevokeReq, SessionReq, TrainSkillReq)
 
 app = FastAPI(title="NTK-Mirror Control Plane", version="0.1")
+
+_DASHBOARD = Path(__file__).parent / "static" / "dashboard.html"
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard():
+    """Track C — single-file governance dashboard (served same-origin)."""
+    return _DASHBOARD.read_text(encoding="utf-8")
 
 
 @app.exception_handler(CPError)
