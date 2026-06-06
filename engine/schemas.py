@@ -19,8 +19,9 @@ class EvalItem(BaseModel):
 class TrainReq(BaseModel):
     task_id: str
     examples: list[dict] = Field(..., description="[{prompt, completion}, ...]")
-    steps: int = 240
-    lr: float = 5e-3
+    # Smoke-validated on Qwen2.5-7B: 240/5e-3 under-fits, 600/8e-3 saturates.
+    steps: int = 600
+    lr: float = 8e-3
     batch_size: int = 8
     max_length: int = 256
 
