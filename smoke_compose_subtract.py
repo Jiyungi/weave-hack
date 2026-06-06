@@ -36,11 +36,20 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# ntkmirror's upstream pip packaging is broken (builds an empty "UNKNOWN"
+# package), so it must be used from a clone. If a clone exists at
+# ~/ntkmirror_src, put its src/ on the path so `import ntkmirror` works without
+# requiring PYTHONPATH to be set.
+_ntk_src = os.path.expanduser("~/ntkmirror_src/src")
+if os.path.isdir(_ntk_src) and _ntk_src not in sys.path:
+    sys.path.insert(0, _ntk_src)
 
 from ntkmirror import ForwardFineTuner, SignedLogMaskState, load_jsonl_examples
 from ntkmirror.compose import compose_states, pair_report

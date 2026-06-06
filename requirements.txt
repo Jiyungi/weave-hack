@@ -6,11 +6,13 @@ datasets>=2.20
 peft>=0.12
 bitsandbytes>=0.43        # QLoRA 4-bit (GPU only)
 
-# NTK-Mirror (controller engine) from upstream.
-# NOTE: bare git+ URL on purpose. The package's metadata reports its name as
-# "unknown", so the PEP 508 'ntkmirror @ git+...' form fails pip's name check
-# and aborts the whole install. A bare VCS URL installs cleanly.
-git+https://github.com/leochlon/ntkmirror.git
+# NTK-Mirror (controller engine) is NOT pip-installable from upstream:
+# its pyproject.toml is misconfigured for the src/ layout, so pip builds an
+# empty package named "UNKNOWN" (import ntkmirror then fails). Instead, clone it
+# and put its src/ on the path. setup_brev.sh does this; the smoke script and
+# engine/__init__.py also add ~/ntkmirror_src/src to sys.path automatically:
+#   git clone https://github.com/leochlon/ntkmirror.git ~/ntkmirror_src
+#   export PYTHONPATH=$HOME/ntkmirror_src/src:$PYTHONPATH
 
 # Real controller service (Track A) exposed to Tracks B/C
 fastapi>=0.111
