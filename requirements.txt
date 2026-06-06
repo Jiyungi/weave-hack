@@ -1,0 +1,15 @@
+# Core model + adaptation stack (real model, no mocks)
+torch>=2.3
+transformers>=4.44
+accelerate>=0.33
+datasets>=2.20
+peft>=0.12
+bitsandbytes>=0.43        # QLoRA 4-bit (GPU only)
+
+# NTK-Mirror (controller engine). Pinned to the upstream repo.
+ntkmirror @ git+https://github.com/leochlon/ntkmirror.git
+
+# Real controller service (Track A) exposed to Tracks B/C
+fastapi>=0.111
+uvicorn[standard]>=0.30
+pydantic>=2.7
