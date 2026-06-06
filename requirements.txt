@@ -6,8 +6,11 @@ datasets>=2.20
 peft>=0.12
 bitsandbytes>=0.43        # QLoRA 4-bit (GPU only)
 
-# NTK-Mirror (controller engine). Pinned to the upstream repo.
-ntkmirror @ git+https://github.com/leochlon/ntkmirror.git
+# NTK-Mirror (controller engine) from upstream.
+# NOTE: bare git+ URL on purpose. The package's metadata reports its name as
+# "unknown", so the PEP 508 'ntkmirror @ git+...' form fails pip's name check
+# and aborts the whole install. A bare VCS URL installs cleanly.
+git+https://github.com/leochlon/ntkmirror.git
 
 # Real controller service (Track A) exposed to Tracks B/C
 fastapi>=0.111
