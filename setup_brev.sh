@@ -31,13 +31,25 @@ source "$VENV/bin/activate"
 python -m pip install --upgrade pip
 
 echo "=== [2/5] python deps ==="
+# Match the box's CUDA *driver* (Brev boxes are typically on a 12.x driver). The
+# default torch wheel is built for CUDA 13 and fails on a 12.x driver ("driver is
+# too old"), silently falling back to CPU. Install a CUDA 12.8 build first so the
+# requirements step finds torch already satisfied and doesn't pull cu130.
+# If a box has an older driver (e.g. 12.4), change cu128 -> cu126 / cu124.
+TORCH_CUDA_INDEX="${TORCH_CUDA_INDEX:-https://download.pytorch.org/whl/cu128}"
+python -m pip install torch --index-url "$TORCH_CUDA_INDEX"
 if [ -f requirements.txt ]; then
   python -m pip install -r requirements.txt
 else
   # running before the repo is cloned
-  python -m pip install "torch>=2.3" "transformers>=4.44" accelerate datasets peft bitsandbytes \
+  python -m pip install "transformers>=4.44" accelerate datasets peft bitsandbytes \
               "fastapi>=0.111" "uvicorn[standard]>=0.30" "pydantic>=2.7"
 fi
+python - <<'PY'
+import torch
+print("torch:", torch.__version__, "| cuda avail:", torch.cuda.is_available(),
+      "| built for CUDA:", torch.version.cuda)
+PY
 
 echo "=== [3/5] ntkmirror (clone, not pip — upstream packaging is broken) ==="
 if [ ! -d "$NTK_SRC/.git" ]; then
