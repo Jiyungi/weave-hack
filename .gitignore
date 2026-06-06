@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.pyc
+
+# Track B runtime audit log (regenerated at runtime)
+control_plane_audit.jsonl
+
+# Local venvs
+venv/
+.venv/
