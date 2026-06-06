@@ -21,9 +21,17 @@ class PolicyReq(BaseModel):
     allowed_skills: list[str]
 
 
+class PersonalizeReq(BaseModel):
+    user_id: str
+    examples: list[dict] = Field(..., description="[{prompt, completion}, ...] styled to the user")
+
+
 class SessionReq(BaseModel):
     principal: str
     skills: list[str]
+    # Optional: compose this user's personalization (style) adapter into the
+    # session alongside the authorized tools. No-op if the user has none yet.
+    user_id: str | None = None
     # Advanced/demo: the skills actually composed into the session controller
     # (the model-level capability). Defaults to the authorized set. When this is
     # broader than policy -- e.g. a shared/over-capable controller, or a

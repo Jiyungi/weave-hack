@@ -11,8 +11,8 @@ from . import config, store
 from .audit import audit
 from .store import CPError
 from .track_a import TrackAError
-from .schemas import (ActReq, PolicyReq, RegisterSkillReq, RevokeReq,
-                      SessionReq, TrainSkillReq)
+from .schemas import (ActReq, PersonalizeReq, PolicyReq, RegisterSkillReq,
+                      RevokeReq, SessionReq, TrainSkillReq)
 
 app = FastAPI(title="NTK-Mirror Control Plane", version="0.1")
 
@@ -61,9 +61,17 @@ def set_policy(req: PolicyReq):
     return store.set_policy(req.principal, req.allowed_skills)
 
 
+@app.post("/personalize")
+def personalize(req: PersonalizeReq):
+    if not req.examples:
+        raise store.CPError("no examples provided")
+    return store.personalize(req.user_id, req.examples)
+
+
 @app.post("/session")
 def open_session(req: SessionReq):
-    return store.open_session(req.principal, req.skills, compose_skills=req.compose_skills)
+    return store.open_session(req.principal, req.skills,
+                              compose_skills=req.compose_skills, user_id=req.user_id)
 
 
 @app.post("/act")

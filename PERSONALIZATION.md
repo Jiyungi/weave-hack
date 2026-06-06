@@ -56,7 +56,7 @@ Keep it to ~10–30 focused styled pairs so the artifact stays ~200 KB.
 ## The seam (the only two API calls you need)
 
 The control plane exposes these so you never touch the model, gates, or
-composition. (Provided by the tooling side; coordinate if not yet live.)
+composition. (Both are live on the `controller-engine` branch.)
 
 ### 1. Mint / update a user's personalization adapter
 
@@ -90,7 +90,7 @@ cost and zero per-turn latency.
 
 ## Definition of done (your acceptance test)
 
-Using the style + tool composition (see `smoke_style_plus_tool.py` once it lands):
+Using the style + tool composition (validated by `smoke_style_plus_tool.py`):
 
 1. `compose([user_style[uid], weather_tool])` → `weather(...)` still fires on tool
    prompts **and** the style shows on general prompts.

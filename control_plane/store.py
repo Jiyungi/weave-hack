@@ -21,7 +21,9 @@ class CPError(RuntimeError):
 _skills: dict[str, str] = {}
 # principal -> set of allowed skill names
 _policy: dict[str, set[str]] = {}
-# session id -> {principal, authorized: set[str], controller_id: str}
+# user_id -> Track A controller id of that user's personalization (style) adapter
+_personalization: dict[str, str] = {}
+# session id -> {principal, authorized: set[str], controller_id: str, ...}
 _sessions: dict[str, dict] = {}
 
 
@@ -47,15 +49,29 @@ def set_policy(principal: str, allowed_skills: list[str]) -> dict:
     return {"principal": principal, "allowed_skills": sorted(_policy[principal])}
 
 
-def _compose_for(skills: list[str], controller_id: str) -> str:
-    """Compose the given skills' controllers into one session controller via Track A."""
-    ids = [_skills[s] for s in skills]
+def personalize(user_id: str, examples: list[dict]) -> dict:
+    """Mint/refresh a user's personalization (style) adapter via Track A.
+
+    The memory track calls this on its update cadence with styled (prompt,
+    completion) examples (HOW the user likes things, not facts). The resulting
+    controller is composed into that user's sessions alongside their tools.
+    """
+    res = track_a.train(f"user_style-{user_id}", examples)
+    _personalization[user_id] = res["controller_id"]
+    audit.record("personalize", user_id=user_id,
+                 controller_id=res["controller_id"], n_examples=len(examples))
+    return {"user_id": user_id, **res}
+
+
+def _compose_ids(ids: list[str], controller_id: str) -> str:
+    """Compose the given Track A controller ids into one controller (weights all 1)."""
     res = track_a.compose(ids, [1.0] * len(ids), new_id=controller_id)
     return res["controller_id"]
 
 
 def open_session(principal: str, requested_skills: list[str],
-                 compose_skills: list[str] | None = None) -> dict:
+                 compose_skills: list[str] | None = None,
+                 user_id: str | None = None) -> dict:
     allowed = _policy.get(principal, set())
     authorized = [s for s in requested_skills if s in allowed]
     denied = [s for s in requested_skills if s not in allowed]
@@ -73,15 +89,24 @@ def open_session(principal: str, requested_skills: list[str],
         raise CPError(f"unknown skills in compose_skills: {unknown}")
     if not capability:
         raise CPError("session has no capability skills to compose")
+    # The session controller composes the user's personalization adapter (style,
+    # if any) with the capability controllers (tools). Style is not a tool and
+    # emits no tool calls, so it rides along the same compose() but never enters
+    # the runtime-authorized set.
+    style_id = _personalization.get(user_id) if user_id else None
+    personalized = style_id is not None
+    compose_ids = ([style_id] if style_id else []) + [_skills[s] for s in capability]
     sid = f"sess-{uuid.uuid4().hex[:8]}"
-    controller_id = _compose_for(capability, f"{sid}-ctrl")
+    controller_id = _compose_ids(compose_ids, f"{sid}-ctrl")
     _sessions[sid] = {"principal": principal, "authorized": set(authorized),
-                      "capability": set(capability), "controller_id": controller_id}
+                      "capability": set(capability), "controller_id": controller_id,
+                      "user_id": user_id, "personalized": personalized}
     audit.record("open_session", session_id=sid, principal=principal,
-                 authorized=authorized, denied=denied,
-                 capability=sorted(capability), controller_id=controller_id)
+                 authorized=authorized, denied=denied, capability=sorted(capability),
+                 user_id=user_id, personalized=personalized, controller_id=controller_id)
     return {"session_id": sid, "principal": principal, "authorized": authorized,
             "denied": denied, "capability": sorted(capability),
+            "user_id": user_id, "personalized": personalized,
             "controller_id": controller_id}
 
 
@@ -135,9 +160,12 @@ def snapshot() -> dict:
     return {
         "skills": dict(_skills),
         "policies": {p: sorted(v) for p, v in _policy.items()},
+        "personalization": dict(_personalization),
         "sessions": {sid: {"principal": v["principal"],
                            "authorized": sorted(v["authorized"]),
                            "capability": sorted(v.get("capability", set())),
+                           "user_id": v.get("user_id"),
+                           "personalized": v.get("personalized", False),
                            "controller_id": v["controller_id"]}
                      for sid, v in _sessions.items()},
     }
