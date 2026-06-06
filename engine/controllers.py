@@ -45,7 +45,7 @@ def list_controllers() -> list[dict]:
             for p in sorted(config.CONTROLLER_DIR.glob("*.pt"))]
 
 
-def train(task_id: str, examples: list[dict], *, steps: int = 240, lr: float = 5e-3,
+def train(task_id: str, examples: list[dict], *, steps: int = 600, lr: float = 8e-3,
           batch_size: int = 8, max_length: int = 256) -> dict:
     exs = [Example(str(e["prompt"]), str(e["completion"])) for e in examples]
     tuner = _new_tuner()
@@ -66,7 +66,13 @@ def train(task_id: str, examples: list[dict], *, steps: int = 240, lr: float = 5
 
 def compose(controller_ids: list[str], weights: list[float], *, new_id: str | None = None) -> dict:
     states = [SignedLogMaskState.load(controller_path(c)) for c in controller_ids]
-    composed = compose_states(states, weights=weights)
+    # compose_states sums signed log-gates on shared (layer,channel) keys then
+    # clips to max_log_gate. Without enough headroom the sum on overlapping gates
+    # is clipped and the larger-magnitude controller dominates, silently
+    # suppressing the others. Use the worst-case |sum| of the inputs — lossless,
+    # since gate = max_log_gate*tanh(raw) reproduces the value when headroom>=|sum|.
+    headroom = sum(abs(w) * float(s.max_log_gate) for w, s in zip(weights, states))
+    composed = compose_states(states, weights=weights, max_log_gate=headroom)
     new_id = new_id or f"compose-{uuid.uuid4().hex[:8]}"
     composed.save(config.CONTROLLER_DIR / f"{new_id}.pt")
     return {
