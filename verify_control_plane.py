@@ -15,7 +15,11 @@ End-to-end Track B demo, entirely over the control-plane HTTP surface (port
        -> a date query emits calendar(...)            (granted)
        -> revoke calendar -> same query no longer emits it (model-level revoke),
           and the runtime guard would block it regardless (defense in depth).
-  5. Dump the audit trail.
+  6. Defense in depth: provision a session whose model-level capability is
+       broader than its policy (calendar-capable controller, weather-only
+       authorization). The model emits calendar(...), and the runtime guard
+       BLOCKS it (permitted=False) -- the second layer doing visible work.
+  7. Dump the audit trail.
 
 Run (both services up on the box):
   uvicorn controller_service:app       --port 8000     # Track A
@@ -70,6 +74,7 @@ def show_act(label: str, r: dict) -> None:
     print(f"    tool_calls   : {r['tool_calls']}")
     print(f"    allowed      : {r['allowed_calls']}")
     print(f"    blocked      : {r['blocked_calls']}")
+    print(f"    permitted    : {r.get('permitted', True)}")
 
 
 def main() -> None:
@@ -106,12 +111,25 @@ def main() -> None:
     after = post("/act", {"session_id": s2["session_id"], "prompt": CALENDAR_Q})
     show_act("date query AFTER revoke:", after)
 
+    print("\n[6] defense in depth: model-level capability BROADER than policy")
+    print("    (provision a calendar-capable controller, but authorize only weather --")
+    print("     models a shared/over-capable controller or a REDUCE-only skill)")
+    s3 = post("/session", {"principal": "support-bot", "skills": ["weather"],
+                           "compose_skills": ["weather", "calendar"]})
+    print(f"  authorized(runtime)={s3['authorized']}  capability(model)={s3['capability']}")
+    leak = post("/act", {"session_id": s3["session_id"], "prompt": CALENDAR_Q})
+    show_act("date query (model emits calendar, policy forbids):", leak)
+
     print("\n=== verdict ===")
     support_denied = "calendar" not in s1["authorized"]
     support_no_emit = "calendar" not in post(
         "/act", {"session_id": s1["session_id"], "prompt": CALENDAR_Q})["tool_calls"]
     granted_fired = "calendar" in before["tool_calls"]
     revoked_gone = "calendar" not in after["tool_calls"]
+    # Layer 2: even though the model emitted calendar, the runtime guard must
+    # block it (permitted == False) because the principal isn't authorized.
+    runtime_emitted = "calendar" in leak["tool_calls"]
+    runtime_blocked = "calendar" in leak["blocked_calls"] and not leak["permitted"]
 
     def mark(ok: bool) -> str:
         return "PASS" if ok else "FAIL"
@@ -120,8 +138,12 @@ def main() -> None:
     print(f"  support-bot session cannot emit calendar        : {mark(support_no_emit)}")
     print(f"  exec-assistant CAN emit calendar when granted   : {mark(granted_fired)}")
     print(f"  revoke removes calendar at model level          : {mark(revoked_gone)}")
-    if support_denied and support_no_emit and granted_fired and revoked_gone:
-        print("\n  CONTROL PLANE HOLDS -> grant/deny/revoke enforced end-to-end.")
+    print(f"  runtime guard blocks unauthorized emit (layer 2): {mark(runtime_blocked)}"
+          f"   (model emitted it: {runtime_emitted})")
+    if (support_denied and support_no_emit and granted_fired and revoked_gone
+            and runtime_blocked):
+        print("\n  CONTROL PLANE HOLDS -> grant/deny/revoke + runtime guard enforced "
+              "end-to-end (defense in depth).")
     else:
         print("\n  Inspect /audit and /state; one governance step did not enforce.")
 

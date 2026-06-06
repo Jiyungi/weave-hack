@@ -63,7 +63,7 @@ def set_policy(req: PolicyReq):
 
 @app.post("/session")
 def open_session(req: SessionReq):
-    return store.open_session(req.principal, req.skills)
+    return store.open_session(req.principal, req.skills, compose_skills=req.compose_skills)
 
 
 @app.post("/act")

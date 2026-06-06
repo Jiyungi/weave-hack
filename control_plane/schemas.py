@@ -24,6 +24,12 @@ class PolicyReq(BaseModel):
 class SessionReq(BaseModel):
     principal: str
     skills: list[str]
+    # Advanced/demo: the skills actually composed into the session controller
+    # (the model-level capability). Defaults to the authorized set. When this is
+    # broader than policy -- e.g. a shared/over-capable controller, or a
+    # REDUCE-only skill that subtraction cannot fully erase -- the runtime guard
+    # is what still blocks the unauthorized calls (defense in depth).
+    compose_skills: list[str] | None = None
 
 
 class ActReq(BaseModel):

@@ -54,21 +54,35 @@ def _compose_for(skills: list[str], controller_id: str) -> str:
     return res["controller_id"]
 
 
-def open_session(principal: str, requested_skills: list[str]) -> dict:
+def open_session(principal: str, requested_skills: list[str],
+                 compose_skills: list[str] | None = None) -> dict:
     allowed = _policy.get(principal, set())
     authorized = [s for s in requested_skills if s in allowed]
     denied = [s for s in requested_skills if s not in allowed]
     if not authorized:
         raise CPError(f"principal {principal!r} authorized for none of "
                       f"{requested_skills} (allowed: {sorted(allowed)})")
+    # `capability` = what the session controller is actually composed from (the
+    # model-level reach). Normally this equals the authorized set, so the model
+    # simply cannot do anything it isn't allowed to. compose_skills lets a caller
+    # provision a broader controller (shared/over-capable, or a reduce-only skill)
+    # to demonstrate that the runtime guard still blocks the excess.
+    capability = list(compose_skills) if compose_skills is not None else authorized
+    unknown = [s for s in capability if s not in _skills]
+    if unknown:
+        raise CPError(f"unknown skills in compose_skills: {unknown}")
+    if not capability:
+        raise CPError("session has no capability skills to compose")
     sid = f"sess-{uuid.uuid4().hex[:8]}"
-    controller_id = _compose_for(authorized, f"{sid}-ctrl")
+    controller_id = _compose_for(capability, f"{sid}-ctrl")
     _sessions[sid] = {"principal": principal, "authorized": set(authorized),
-                      "controller_id": controller_id}
+                      "capability": set(capability), "controller_id": controller_id}
     audit.record("open_session", session_id=sid, principal=principal,
-                 authorized=authorized, denied=denied, controller_id=controller_id)
+                 authorized=authorized, denied=denied,
+                 capability=sorted(capability), controller_id=controller_id)
     return {"session_id": sid, "principal": principal, "authorized": authorized,
-            "denied": denied, "controller_id": controller_id}
+            "denied": denied, "capability": sorted(capability),
+            "controller_id": controller_id}
 
 
 def get_session(session_id: str) -> dict:
@@ -84,9 +98,10 @@ def act(session_id: str, prompt: str, max_new_tokens: int) -> dict:
     completion = out["completion"]
     calls = extract_tool_calls(completion)
     allowed, blocked = authorize_calls(calls, s["authorized"])
+    permitted = not blocked
     audit.record("act", session_id=session_id, principal=s["principal"],
                  prompt=prompt, completion=completion, tool_calls=calls,
-                 allowed=allowed, blocked=blocked)
+                 allowed=allowed, blocked=blocked, permitted=permitted)
     return {
         "session_id": session_id,
         "principal": s["principal"],
@@ -94,6 +109,7 @@ def act(session_id: str, prompt: str, max_new_tokens: int) -> dict:
         "tool_calls": calls,
         "allowed_calls": allowed,
         "blocked_calls": blocked,
+        "permitted": permitted,  # False => runtime guard caught an unauthorized call
         "authorized": sorted(s["authorized"]),
     }
 
@@ -107,7 +123,8 @@ def revoke(session_id: str, skill: str) -> dict:
     new_id = f"{session_id}-ctrl-rev-{uuid.uuid4().hex[:4]}"
     res = track_a.compose([s["controller_id"], _skills[skill]], [1.0, -1.0], new_id=new_id)
     s["controller_id"] = res["controller_id"]
-    s["authorized"].discard(skill)  # runtime-level revoke too
+    s["authorized"].discard(skill)              # runtime-level revoke too
+    s.get("capability", set()).discard(skill)   # capability shrinks with it
     audit.record("revoke", session_id=session_id, skill=skill,
                  controller_id=s["controller_id"], authorized=sorted(s["authorized"]))
     return {"session_id": session_id, "revoked": skill,
@@ -120,6 +137,7 @@ def snapshot() -> dict:
         "policies": {p: sorted(v) for p, v in _policy.items()},
         "sessions": {sid: {"principal": v["principal"],
                            "authorized": sorted(v["authorized"]),
+                           "capability": sorted(v.get("capability", set())),
                            "controller_id": v["controller_id"]}
                      for sid, v in _sessions.items()},
     }
