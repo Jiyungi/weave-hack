@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from . import config, store, trace
 from .audit import audit
+from .state import state
 from .store import CPError
 from .track_a import TrackAError
 from .schemas import (ActReq, PersonalizeReq, PolicyReq, RegisterSkillReq,
@@ -48,6 +49,7 @@ def health():
     snap = store.snapshot()
     return {
         "track_a_url": config.TRACK_A_URL,
+        "state_backend": state.backend,
         "audit_backend": audit.backend,
         "weave_tracing": trace.enabled(),
         "n_skills": len(snap["skills"]),
