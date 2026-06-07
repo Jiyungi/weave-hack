@@ -22,7 +22,7 @@ NTK_SRC="${NTK_SRC:-$HOME/ntkmirror_src}"
 # interpreters), which makes `import torch` fail even after a "successful"
 # install. A venv removes that ambiguity: `python` == `pip` and site-packages
 # is writeable. Activate it in every shell you use:  source $VENV/bin/activate
-echo "=== [1/5] virtualenv ($VENV) ==="
+echo "=== [1/8] virtualenv ($VENV) ==="
 if [ ! -d "$VENV" ]; then
   python3 -m venv "$VENV"
 fi
@@ -30,7 +30,7 @@ fi
 source "$VENV/bin/activate"
 python -m pip install --upgrade pip
 
-echo "=== [2/5] python deps ==="
+echo "=== [2/8] PyTorch (CUDA-matched wheel) ==="
 # Match the box's CUDA *driver* (Brev boxes are typically on a 12.x driver). The
 # default torch wheel is built for CUDA 13 and fails on a 12.x driver ("driver is
 # too old"), silently falling back to CPU. Install a CUDA 12.8 build first so the
@@ -38,20 +38,13 @@ echo "=== [2/5] python deps ==="
 # If a box has an older driver (e.g. 12.4), change cu128 -> cu126 / cu124.
 TORCH_CUDA_INDEX="${TORCH_CUDA_INDEX:-https://download.pytorch.org/whl/cu128}"
 python -m pip install torch --index-url "$TORCH_CUDA_INDEX"
-if [ -f requirements.txt ]; then
-  python -m pip install -r requirements.txt
-else
-  # running before the repo is cloned
-  python -m pip install "transformers>=4.55.2,<5.0.0" accelerate datasets peft bitsandbytes \
-              "fastapi>=0.111" "uvicorn[standard]>=0.30" "pydantic>=2.7"
-fi
 python - <<'PY'
 import torch
 print("torch:", torch.__version__, "| cuda avail:", torch.cuda.is_available(),
       "| built for CUDA:", torch.version.cuda)
 PY
 
-echo "=== [3/5] ntkmirror (clone, not pip — upstream packaging is broken) ==="
+echo "=== [3/8] ntkmirror (clone, not pip — upstream packaging is broken) ==="
 if [ ! -d "$NTK_SRC/.git" ]; then
   git clone https://github.com/leochlon/ntkmirror.git "$NTK_SRC"
 else
@@ -62,7 +55,7 @@ SITE="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
 echo "$NTK_SRC/src" > "$SITE/ntkmirror_src.pth"
 export PYTHONPATH="$NTK_SRC/src:${PYTHONPATH:-}"
 
-echo "=== [4/5] repo ($BRANCH) ==="
+echo "=== [4/8] repo ($BRANCH) ==="
 if [ ! -d weave-hack/.git ]; then
   git clone "$REPO_URL"
 fi
@@ -70,6 +63,9 @@ cd weave-hack
 git fetch origin
 git checkout "$BRANCH"
 git pull --ff-only origin "$BRANCH" || true
+
+echo "=== [5/8] python deps (requirements.txt — must run AFTER clone) ==="
+python -m pip install -r requirements.txt
 
 echo "=== sanity: GPU + ntkmirror import ==="
 python - <<'PY'
@@ -80,7 +76,7 @@ if torch.cuda.is_available():
 print("ntkmirror:", ntkmirror.__file__)
 PY
 
-echo "=== [5/5] pre-fetch base weights ($MODEL) ==="
+echo "=== [6/8] pre-fetch base weights ($MODEL) ==="
 python - <<PY
 from transformers import AutoModelForCausalLM, AutoTokenizer
 m = "$MODEL"
@@ -90,7 +86,7 @@ AutoModelForCausalLM.from_pretrained(m)
 print("cached.")
 PY
 
-echo "=== [6/6] Track C UI (Next.js + CopilotKit) ==="
+echo "=== [7/8] Track C UI (Next.js + CopilotKit) ==="
 # Next.js 14 needs Node 18+. The box's system Node is often ancient (v12),
 # which crashes the `next` binary. Install Node 20 via nvm (no sudo needed) if
 # node is missing or older than 18.
@@ -142,6 +138,14 @@ if [ -f scripts/ensure_brain_deps.sh ]; then
   bash scripts/ensure_brain_deps.sh
 else
   echo "  ensure_brain_deps.sh not found — pin manually: pip install 'transformers>=4.55.2,<5.0.0'"
+fi
+
+echo "=== [8/8] verify deps (+ REDIS_URL if .env present) ==="
+if [ -f .env ]; then
+  bash scripts/verify_box_deps.sh
+else
+  echo "  no .env yet — skipping REDIS_URL ping (copy .env.example → .env, then re-run verify)"
+  bash scripts/verify_box_deps.sh --skip-redis
 fi
 
 echo ""

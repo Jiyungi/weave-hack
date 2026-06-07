@@ -147,6 +147,12 @@ start_session() {
     exec tmux attach -t "$SESSION"
   fi
 
+  echo "=== preflight: python deps + REDIS_URL ==="
+  SKIP_PIP=1 bash "$REPO/scripts/verify_box_deps.sh" || {
+    echo "Preflight failed. Repair with:  bash scripts/verify_box_deps.sh" >&2
+    exit 1
+  }
+
   # Redis (required): use REDIS_URL from .env (cloud or local).
   local redis_url="${REDIS_URL:-redis://localhost:6379/0}"
   export REDIS_URL="$redis_url"
