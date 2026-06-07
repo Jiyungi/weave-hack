@@ -194,8 +194,9 @@ def _sync_session_with_policy(session_id: str, principal: str,
                               requested_skills: list[str]) -> None:
     """Align a live session's grants with current policy (+ prior revokes)."""
     policy = state.get_policy(principal)
-    target = {sk for sk in requested_skills if sk in policy}
     s = get_session(session_id)
+    session_revoked = set(s.get("session_revoked", set()))
+    target = {sk for sk in requested_skills if sk in policy} - session_revoked
     current = set(s.get("authorized", set()))
     for skill in sorted(current - target):
         try:
@@ -223,6 +224,7 @@ def _create_bootstrap_session(principal: str, requested_skills: list[str],
         "user_id": user_id,
         "personalized": personalized,
         "bootstrap": True,
+        "session_revoked": set(),
     })
     audit.record("open_session", session_id=sid, principal=principal,
                  authorized=[], denied=denied, capability=[],
@@ -270,7 +272,7 @@ def _create_session(principal: str, requested_skills: list[str],
     state.set_session(sid, {"principal": principal, "authorized": set(authorized),
                             "capability": set(capability), "controller_id": controller_id,
                             "user_id": user_id, "personalized": personalized,
-                            "bootstrap": False})
+                            "bootstrap": False, "session_revoked": set()})
     audit.record("open_session", session_id=sid, principal=principal,
                  authorized=authorized, denied=denied, capability=sorted(capability),
                  user_id=user_id, personalized=personalized, controller_id=controller_id)
@@ -361,9 +363,13 @@ def revoke(session_id: str, skill: str) -> dict:
     s["controller_id"] = res["controller_id"]
     s["authorized"].discard(skill)              # runtime-level revoke too
     s.get("capability", set()).discard(skill)   # capability shrinks with it
+    revoked = set(s.get("session_revoked", set()))
+    revoked.add(skill)
+    s["session_revoked"] = revoked
     state.set_session(session_id, s)            # persist the mutation (Redis write-back)
     audit.record("revoke", session_id=session_id, skill=skill,
-                 controller_id=s["controller_id"], authorized=sorted(s["authorized"]))
+                 controller_id=s["controller_id"], authorized=sorted(s["authorized"]),
+                 session_revoked=sorted(revoked))
     return {"session_id": session_id, "revoked": skill,
             "authorized": sorted(s["authorized"]), "controller_id": s["controller_id"]}
 
@@ -436,6 +442,9 @@ def _grant_into_session(skill: str, session_id: str | None) -> str | None:
     cap = s.get("capability")
     if isinstance(cap, set):
         cap.add(skill)
+    revoked = set(s.get("session_revoked", set()))
+    revoked.discard(skill)
+    s["session_revoked"] = revoked
     state.set_session(session_id, s)
     return res["controller_id"]
 
@@ -566,6 +575,7 @@ def snapshot() -> dict:
         "sessions": {sid: {"principal": v["principal"],
                            "authorized": sorted(v["authorized"]),
                            "capability": sorted(v.get("capability", set())),
+                           "session_revoked": sorted(v.get("session_revoked", set())),
                            "user_id": v.get("user_id"),
                            "personalized": v.get("personalized", False),
                            "controller_id": v["controller_id"]}

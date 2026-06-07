@@ -28,7 +28,7 @@ _PRINC_SESS = "cp:principal_sessions"
 _REQ = "cp:requests"
 _INTERACTIONS = "cp:interactions"
 
-_SESSION_SET_FIELDS = ("authorized", "capability")
+_SESSION_SET_FIELDS = ("authorized", "capability", "session_revoked")
 
 
 def _ser_session(session: dict) -> str:

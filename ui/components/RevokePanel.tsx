@@ -16,7 +16,11 @@ export function RevokePanel() {
   const sessions = Object.entries(state.sessions);
   const sessionOpts = sessions.map(([sid, v]) => ({
     value: sid,
-    label: `${sid} (${v.principal}) auth=[${v.authorized.join(",")}]`,
+    label: `${sid} (${v.principal}) auth=[${v.authorized.join(",")}]${
+      v.session_revoked?.length
+        ? ` revoked=[${v.session_revoked.join(",")}]`
+        : ""
+    }`,
   }));
 
   const current = state.sessions[sessionId];
@@ -90,9 +94,10 @@ export function RevokePanel() {
   return (
     <Card title="Revoke">
       <p className="mb-3 text-[11.5px] text-muted">
-        <strong>Session revoke</strong> subtracts a skill from one live session
-        (demo mid-run). <strong>Policy revoke</strong> removes it from the
-        principal so the orchestrator cannot grant it in new sessions.
+        <strong>Session revoke</strong> subtracts a skill from this chat&apos;s sticky
+        session and stays revoked on reuse until you start a new chat (+) or approve
+        a new REQUEST for that skill.{" "}
+        <strong>Policy revoke</strong> removes it from the principal entirely.
       </p>
 
       <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">

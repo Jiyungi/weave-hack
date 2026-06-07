@@ -25,6 +25,7 @@ export type CpState = {
       principal: string;
       authorized: string[];
       capability: string[];
+      session_revoked?: string[];
       user_id?: string | null;
       personalized?: boolean;
       controller_id: string;
