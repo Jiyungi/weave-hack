@@ -216,12 +216,19 @@ def register_tool(req: RegisterToolReq):
         tool = tools.get(req.tool_name)
     except tools.ToolError as e:
         return JSONResponse(status_code=400, content={"detail": str(e)})
-    return cp.register_tool(
+    examples, source = teacher.mint_examples(tool)
+    result = cp.register_tool(
         skill=tool.name,
-        examples=tool.training_examples(),
+        examples=examples,
         description=tool.description,
         grants=req.grants,
     )
+    return {
+        "registered": tool.name,
+        "examples_source": source,
+        "n_examples": len(examples),
+        "control_plane": result,
+    }
 
 
 @app.post("/mcp/list")
@@ -279,24 +286,6 @@ def register_external(req: RegisterExternalReq):
     else:
         return JSONResponse(status_code=400, content={"detail": f"unknown kind {req.kind!r}"})
 
-    # Synthesize domain-appropriate training args from the tool's OWN
-    # name/description/schema, so the minted controller generalizes to any tool
-    # instead of inheriting the arxiv/search-shaped static samples. Best-effort:
-    # if the brain is offline or returns nothing, fall through to the
-    # schema/heuristic args in adapters._sample_args_for so registration still
-    # works without a brain.
-    if not cfg.get("sample_args"):
-        arg_key = cfg.get("arg_key") or "input"
-        try:
-            generated = teacher.synthesize_args(
-                cfg["name"], cfg.get("description", ""), arg_key,
-                cfg.get("input_schema"), n=8,
-            )
-            if generated:
-                cfg["sample_args"] = generated
-        except Exception:  # noqa: BLE001 — registration must not fail on brain issues
-            pass
-
     try:
         tool = adapters.register_config(cfg)
     except adapters.AdapterError as e:
@@ -306,13 +295,27 @@ def register_external(req: RegisterExternalReq):
             status_code=400,
             content={"detail": f"register failed: {type(e).__name__}: {e}"},
         )
+
+    examples, source = teacher.mint_examples(
+        tool,
+        context=(req.description or "").strip() or None,
+        arg_key=cfg.get("arg_key") or "input",
+        schema=cfg.get("input_schema"),
+        extra_args=cfg.get("sample_args"),
+    )
     result = cp.register_tool(
         skill=tool.name,
-        examples=tool.training_examples(),
+        examples=examples,
         description=tool.description,
         grants=req.grants,
     )
-    return {"registered": tool.name, "kind": req.kind, "control_plane": result}
+    return {
+        "registered": tool.name,
+        "kind": req.kind,
+        "examples_source": source,
+        "n_examples": len(examples),
+        "control_plane": result,
+    }
 
 
 @app.get("/tools")

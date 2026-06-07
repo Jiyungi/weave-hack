@@ -288,7 +288,8 @@ def request_capability(principal: str, skill: str, *, reason: str = "",
     state.set_request(rid, rec)
     audit.record("request_capability", request_id=rid, principal=principal,
                  skill=skill, sensitive=bool(sensitive), reason=reason,
-                 session_id=session_id, mint=bool(examples) and not state.has_skill(skill))
+                 session_id=session_id, mint=bool(examples) and not state.has_skill(skill),
+                 n_examples=len(examples or []))
     if not _needs_human(skill, sensitive):
         return _decide(rid, approve=True, decided_by="auto")
     return _public_request(rec)

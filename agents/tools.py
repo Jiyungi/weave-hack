@@ -287,18 +287,24 @@ class Tool:
     # Sensitive skills (e.g. executing code) require *human* approval even in the
     # hybrid auto/human self-improvement flow, regardless of requires_key.
     sensitive: bool = False
-    # "inline" -> arg carried as tool("arg"); "block" -> arg is a multi-line code
-    # block the brain emits in a fenced ```...``` (can't fit the inline format).
+    # "inline" -> governed model sees the brain's arg in the act prompt.
+    # "gate"   -> probe with a short training-familiar arg; run the brain's arg if
+    #             the gate fires (URLs / long queries confuse the 7B emitter).
+    # "block"  -> arg is a multi-line fenced code block (python).
     arg_mode: str = "inline"
 
     def training_examples(self) -> list[dict]:
         """Synthesize (prompt, completion) pairs in the exact NTK-Mirror format."""
+        return self.examples_for_args(self.sample_args)
+
+    def examples_for_args(self, args: list[str]) -> list[dict]:
+        """Build training pairs for an explicit argument list."""
         return [
             {
                 "prompt": self.prompt_template.format(arg=a),
                 "completion": self.completion_template.format(arg=a),
             }
-            for a in self.sample_args
+            for a in args if str(a).strip()
         ]
 
     def schema(self) -> dict:
@@ -361,6 +367,7 @@ _TOOLS: dict[str, Tool] = {
         sample_args=_QUERIES,
         executor=_web_search,
         needle="web_search(",
+        arg_mode="gate",
     ),
     "http_fetch": Tool(
         name="http_fetch",
@@ -370,6 +377,7 @@ _TOOLS: dict[str, Tool] = {
         sample_args=_URLS,
         executor=_http_fetch,
         needle="http_fetch(",
+        arg_mode="gate",
     ),
     "calculator": Tool(
         name="calculator",

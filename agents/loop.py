@@ -29,7 +29,7 @@ from typing import Optional
 
 from control_plane.trace import attributes, op
 
-from . import cp, tools
+from . import cp, teacher, tools
 from .brain import Brain, get_brain
 
 
@@ -283,6 +283,19 @@ def _execute_allowed(allowed: list[str], completion: str) -> list[str]:
     return out
 
 
+def _gate_and_execute(step: Step, session_id: str, tool_name: str, arg: str) -> None:
+    """Probe the governed 7B with a training-familiar arg; run *arg* if gate fires."""
+    tool = tools.get(tool_name)
+    probe_arg = tool.sample_args[0] if tool.sample_args else "..."
+    probe = tool.prompt_template.format(arg=probe_arg)
+    governed = cp.act(session_id, probe, max_new_tokens=32)
+    step.governed_completion = governed.get("completion", "")
+    step.allowed = list(governed.get("allowed_calls", []))
+    step.blocked = list(governed.get("blocked_calls", []))
+    if tool_name in step.allowed:
+        step.observations = [tools.execute(tool_name, arg)]
+
+
 @op(name="agent.step")
 def _step(brain: Brain, messages: list[dict], session_id: str,
           max_new_tokens: int, *,
@@ -311,20 +324,11 @@ def _step(brain: Brain, messages: list[dict], session_id: str,
         step.note = f"unknown tool {tool_name!r}; available: {sorted(tools.registry())}"
         return step
     tool = tools.get(tool_name)
-    if tool.arg_mode == "block":
-        # Large-arg tool (e.g. python): the controller only GATES the call -- we
-        # probe the governed model with a short canonical arg to confirm it still
-        # emits the call (and the runtime guard authorizes it), then run the
-        # brain-authored code itself. Revoking the skill subtracts the controller,
-        # the gate stops firing, and the code never runs.
-        probe_arg = tool.sample_args[0] if tool.sample_args else "..."
-        probe = tool.prompt_template.format(arg=probe_arg)
-        governed = cp.act(session_id, probe, max_new_tokens=24)
-        step.governed_completion = governed.get("completion", "")
-        step.allowed = list(governed.get("allowed_calls", []))
-        step.blocked = list(governed.get("blocked_calls", []))
-        if tool_name in step.allowed:
-            step.observations = [tools.execute(tool_name, arg)]
+    if tool.arg_mode in ("block", "gate"):
+        # block (python) and gate (http_fetch/web_search): the controller only
+        # confirms the skill is expressible on a short probe; the brain's arg
+        # (long URL, query, or code block) is executed only if the gate fires.
+        _gate_and_execute(step, session_id, tool_name, arg)
         return step
     prompt = tool.prompt_template.format(arg=arg)
     governed = cp.act(session_id, prompt, max_new_tokens=max_new_tokens)
@@ -361,20 +365,29 @@ def _build_system(principal: str, task: str, visible_tools: list[str] | None,
     )
 
 
-def _provision_meta(skill: str, catalog: set[str]) -> tuple[bool, Optional[list[dict]], str]:
-    """Resolve (sensitive, mint_examples, description) for a requested skill.
+def _mint_context(reason: str, task: str) -> str:
+    """Organic context for teacher minting (REQUEST reason + worker task)."""
+    parts = [p.strip() for p in (reason, task) if p and p.strip()]
+    return "\n".join(parts)
+
+
+def _provision_meta(skill: str, catalog: set[str], *,
+                    context: str = "",
+                    brain: Brain | None = None) -> tuple[bool, Optional[list[dict]], str, str]:
+    """Resolve (sensitive, mint_examples, description, examples_source).
 
     A skill already in the catalog needs no examples (its controller exists) --
-    approval just grants it. A known local tool not yet minted supplies its own
-    training examples so approval can mint it (Case 2). Sensitivity comes from
-    the tool's requires_key so the hybrid policy can route it to a human.
+    approval just grants it. A known local tool not yet minted gets
+    teacher-synthesized training data (with static sample_args as a floor).
     """
     try:
         t = tools.get(skill)
     except tools.ToolError:
-        return False, None, ""
-    examples = None if skill in catalog else t.training_examples()
-    return bool(t.sensitive or t.requires_key), examples, t.description
+        return False, None, "", "static"
+    if skill in catalog:
+        return bool(t.sensitive or t.requires_key), None, t.description, "static"
+    examples, source = teacher.mint_examples(t, context=context or None, brain=brain)
+    return bool(t.sensitive or t.requires_key), examples, t.description, source
 
 
 def _await_decision(request_id: str) -> tuple[str, str]:
@@ -390,7 +403,8 @@ def _await_decision(request_id: str) -> tuple[str, str]:
 
 @op(name="agent.acquire_skill")
 def _acquire_skill(principal: str, skill: str, reason: str, session_id: str,
-                   catalog: set[str]) -> Step:
+                   catalog: set[str], *, task: str = "",
+                   brain: Brain | None = None) -> Step:
     """Run one self-improvement step: request a skill, wait for the hybrid
     decision, and (on approval) it is already granted + composed into the live
     session by the control plane. Returns a Step recording the outcome."""
@@ -399,7 +413,9 @@ def _acquire_skill(principal: str, skill: str, reason: str, session_id: str,
         step.request_status = "denied"
         step.note = f"cannot acquire {skill!r}: no such tool exists to grant"
         return step
-    sensitive, examples, description = _provision_meta(skill, catalog)
+    sensitive, examples, description, source = _provision_meta(
+        skill, catalog, context=_mint_context(reason, task), brain=brain,
+    )
     resp = cp.request_capability(principal, skill, reason=reason, session_id=session_id,
                                  sensitive=sensitive, examples=examples,
                                  description=description)
@@ -409,6 +425,10 @@ def _acquire_skill(principal: str, skill: str, reason: str, session_id: str,
         status, decided_by = _await_decision(resp["request_id"])
     step.request_status = status
     step.request_decided_by = decided_by
+    if examples and source == "teacher":
+        step.note = f"mint examples from teacher ({len(examples)} pairs)"
+    elif examples:
+        step.note = f"mint examples from static registry ({len(examples)} pairs)"
     return step
 
 
@@ -494,7 +514,7 @@ def run(principal: str, skills: list[str], task: str, *,
             if step.requested_skill is not None and allow_requests:
                 skill = step.requested_skill
                 outcome = _acquire_skill(principal, skill, step.request_reason,
-                                         session_id, catalog)
+                                         session_id, catalog, task=task, brain=brain)
                 step.request_status = outcome.request_status
                 step.request_decided_by = outcome.request_decided_by
                 step.note = outcome.note

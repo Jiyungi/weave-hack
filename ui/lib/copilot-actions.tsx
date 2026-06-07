@@ -1,7 +1,7 @@
 "use client";
 
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
-import { ag, cp, SKILL_TRAIN } from "@/lib/api";
+import { ag, cp } from "@/lib/api";
 import { useDashboard } from "@/lib/dashboard-context";
 import { DelegationCard } from "@/components/DelegationTree";
 import { Pill } from "@/components/ui";
@@ -37,7 +37,7 @@ export function CopilotActions() {
     parameters: [],
     handler: async () => {
       for (const skill of ["weather", "calendar"] as const) {
-        await cp.trainSkill(skill, SKILL_TRAIN[skill]);
+        await ag.registerTool(skill);
       }
       await cp.setPolicy("support-bot", ["weather"]);
       await cp.setPolicy("exec-assistant", ["weather", "calendar"]);

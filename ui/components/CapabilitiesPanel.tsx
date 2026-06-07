@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ag, cp, SKILL_TRAIN } from "@/lib/api";
+import { ag, cp } from "@/lib/api";
 import { useDashboard } from "@/lib/dashboard-context";
 import { Btn, Card, Pill, Status } from "./ui";
 
@@ -19,8 +19,8 @@ export function CapabilitiesPanel() {
     setSeeding(true);
     try {
       for (const skill of ["weather", "calendar"] as const) {
-        setStatus(`training ${skill}… (~36s)`);
-        await cp.trainSkill(skill, SKILL_TRAIN[skill]);
+        setStatus(`minting ${skill}… (~36s, teacher-synthesized examples)`);
+        await ag.registerTool(skill);
       }
       setStatus("setting policies…");
       await cp.setPolicy("support-bot", ["weather"]);
