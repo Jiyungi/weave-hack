@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from control_plane.trace import op
+from control_plane.trace import attributes, op
 
 from . import cp, tools
 from .brain import Brain, get_brain
@@ -236,17 +236,21 @@ def run(principal: str, skills: list[str], task: str, *,
 
     steps: list[Step] = []
     stopped_reason = "max_steps"
-    for _ in range(max_steps):
-        step = _step(brain, messages, session_id, max_new_tokens)
-        steps.append(step)
-        if step.final is not None:
-            stopped_reason = "final"
-            break
-        messages.append({"role": "assistant", "content":
-                         (f"THOUGHT: {step.thought}\n" if step.thought else "")
-                         + (f"ACTION: {step.proposed_tool}(\"{step.proposed_arg}\")"
-                            if step.proposed_tool else "")})
-        messages.append({"role": "user", "content": _format_observation(step)})
+    # Tag every traced op in this loop with the governance context so the Weave
+    # trace tree is filterable by principal / session / authorized capability.
+    with attributes({"principal": principal, "session_id": session_id,
+                     "authorized": authorized, "denied": denied}):
+        for _ in range(max_steps):
+            step = _step(brain, messages, session_id, max_new_tokens)
+            steps.append(step)
+            if step.final is not None:
+                stopped_reason = "final"
+                break
+            messages.append({"role": "assistant", "content":
+                             (f"THOUGHT: {step.thought}\n" if step.thought else "")
+                             + (f"ACTION: {step.proposed_tool}(\"{step.proposed_arg}\")"
+                                if step.proposed_tool else "")})
+            messages.append({"role": "user", "content": _format_observation(step)})
 
     final_answer = steps[-1].final if steps and steps[-1].final else None
     return RunResult(

@@ -25,21 +25,41 @@ The `weather`/`calendar` skills here are deliberately simple **stand-ins for rea
 ## Architecture
 
 ```
-request
-  → [Track B] control plane
-        authorization policy (principal → allowed skills)
-        compose ONLY the authorized skills  ─────────────►  [Track A] controller engine
-        runtime tool-call guard (hard boundary)                 train / compose / subtract
-        audit every action (Redis stream or file)               + risk evals
-  ← governed completion
+            ┌──────────────────────── [Track C] CopilotKit UI :3000 ───────────────────────┐
+            │  panels (seed · session · act · revoke · audit · committee) + Copilot chat     │
+            └───────────────┬──────────────────────────────────────────┬───────────────────┘
+                            │ same-origin proxy                          │ chat
+                            ▼                                            ▼
+   [Track D] agents :8200                                        Brain (vLLM) :8001
+   orchestrator (planner, no tools)                              Qwen2.5-14B-Instruct
+     └─ delegates sub-tasks to governed workers                  (reasoning; ungoverned,
+          exec-assistant · support-bot                            swappable, untrusted)
+          each worker runs a governed ReAct loop ──┐                    ▲
+          brain proposes → /act governs → execute  │  proposes tool calls
+                                                    │
+                            ┌───────────────────────▼──────────────────────────┐
+                            │            [Track B] control plane :8100           │
+                            │  authorization policy (principal → allowed skills) │
+                            │  compose ONLY authorized skills ──────────────►  [Track A] engine :8000
+                            │  runtime tool-call guard (hard boundary)          │  train / compose / subtract
+                            │  POST /register (committee: mint+grant a tool)    │  on a frozen Qwen2.5-7B
+                            │  audit every action · state (Redis or in-memory)  │  + risk evals
+                            └───────────────────────────────────────────────────┘
+                                              │
+                              Weave traces the whole tree (train→compose→act→guard→revoke,
+                              brain.chat, tool execution) when WANDB_API_KEY is set.
 
 Defense in depth:
   layer 1 (model-level): the session controller can only emit granted skills
   layer 2 (runtime):     the guard blocks any unauthorized call even if emitted
+  the brain is untrusted: even a wrong/adversarial tool proposal can't bypass either layer
 ```
 
 - **Track A — controller engine** (`engine/`, `controller_service.py`): the NTK-Mirror operations as an HTTP service over a single frozen 7B. Endpoints: `/train`, `/compose`, `/execute`, `/evaluate`, `/inspect`, `/pair`, plus the risk evals `/diagnose`, `/forgetting`, `/jailbreak`.
-- **Track B — control plane** (`control_plane/`, `control_plane_service.py`): authorization, per-session capability composition, runtime guard, audit, revocation. Talks to Track A over HTTP so the tracks stay decoupled.
+- **Track B — control plane** (`control_plane/`, `control_plane_service.py`): authorization, per-session capability composition, runtime guard, audit, revocation, and the committee `/register` endpoint. State is in-memory by default or Redis-backed when `REDIS_URL` is set. Talks to Track A over HTTP so the tracks stay decoupled.
+- **Track C — control surface** (`ui/`): Next.js + CopilotKit. Governance panels plus a chat sidebar wired to the local brain; same-origin proxies reach Tracks B and D so only port 3000 is exposed.
+- **Track D — agents** (`agents/`, `agent_service.py`): a planner orchestrator decomposes a task and delegates to governed worker agents, each running a ReAct loop where the brain proposes tool calls and Track B governs them at the weight level.
+- **Brain** (vLLM, `agents/brain.py`): any OpenAI-compatible endpoint (local vLLM by default). It does the *reasoning*; it is ungoverned, swappable, and untrusted — governance is enforced downstream.
 
 ---
 

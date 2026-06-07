@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from control_plane.trace import op
+from control_plane.trace import attributes, op
 
 from . import cp, loop, tools
 from .brain import Brain, get_brain
@@ -258,36 +258,40 @@ def run(task: str, *,
     stopped_reason = "max_delegations"
     final_answer: Optional[str] = None
 
-    for _ in range(max_delegations):
-        raw = brain.chat(messages)
-        thought, action, final = _parse_orchestrator(raw)
-        if final is not None:
-            final_answer = final
-            stopped_reason = "final"
-            break
-        if action is None:
-            d = Delegation(worker="(planner)", subtask="",
-                           note="planner returned no DELEGATE or FINAL; expected "
-                                "'DELEGATE: <worker> | <sub-task>' or 'FINAL: ...'")
-            delegations.append(d)
-            break
-        worker_name, subtask = action
-        if worker_name not in by_name:
-            d = Delegation(worker=worker_name, subtask=subtask, thought=thought,
-                           note=f"unknown worker {worker_name!r}; "
-                                f"available: {sorted(by_name)}")
+    # Tag the whole orchestration (and every nested worker/brain/tool op) with the
+    # task + roster so the Weave trace tree is filterable.
+    with attributes({"task": task, "workers": sorted(by_name),
+                     "available_skills": available}):
+        for _ in range(max_delegations):
+            raw = brain.chat(messages)
+            thought, action, final = _parse_orchestrator(raw)
+            if final is not None:
+                final_answer = final
+                stopped_reason = "final"
+                break
+            if action is None:
+                d = Delegation(worker="(planner)", subtask="",
+                               note="planner returned no DELEGATE or FINAL; expected "
+                                    "'DELEGATE: <worker> | <sub-task>' or 'FINAL: ...'")
+                delegations.append(d)
+                break
+            worker_name, subtask = action
+            if worker_name not in by_name:
+                d = Delegation(worker=worker_name, subtask=subtask, thought=thought,
+                               note=f"unknown worker {worker_name!r}; "
+                                    f"available: {sorted(by_name)}")
+                delegations.append(d)
+                messages.append({"role": "assistant", "content": raw.strip()})
+                messages.append({"role": "user", "content": d.summarize()})
+                continue
+            d = _delegate(by_name[worker_name], subtask,
+                          max_steps=worker_max_steps,
+                          max_new_tokens=worker_max_new_tokens,
+                          brain=brain)
+            d.thought = thought
             delegations.append(d)
             messages.append({"role": "assistant", "content": raw.strip()})
             messages.append({"role": "user", "content": d.summarize()})
-            continue
-        d = _delegate(by_name[worker_name], subtask,
-                      max_steps=worker_max_steps,
-                      max_new_tokens=worker_max_new_tokens,
-                      brain=brain)
-        d.thought = thought
-        delegations.append(d)
-        messages.append({"role": "assistant", "content": raw.strip()})
-        messages.append({"role": "user", "content": d.summarize()})
 
     return OrchestratorResult(
         task=task,

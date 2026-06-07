@@ -22,6 +22,7 @@ project name with ``WEAVE_PROJECT`` (default: ``OpenMirror``).
 """
 from __future__ import annotations
 
+import contextlib
 import functools
 import os
 
@@ -54,6 +55,21 @@ def init() -> bool:
 
 def enabled() -> bool:
     return _ENABLED
+
+
+def attributes(values: dict):
+    """Context manager attaching searchable metadata to the enclosing trace.
+
+    Tags every op call inside the ``with`` block with ``values`` (e.g. the
+    principal, session, or task) so traces are filterable in the Weave UI. A
+    no-op when tracing is off, so it's always safe to wrap a code path.
+    """
+    if not _ENABLED or _weave is None:
+        return contextlib.nullcontext()
+    try:
+        return _weave.attributes(values)
+    except Exception:
+        return contextlib.nullcontext()
 
 
 def op(fn=None, *, name=None):

@@ -30,6 +30,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Callable
 
+from control_plane.trace import op
+
 
 class ToolError(RuntimeError):
     """A tool executor failed (network, bad arg, etc.)."""
@@ -381,6 +383,7 @@ def register(tool: Tool) -> None:
     _TOOLS[tool.name] = tool
 
 
+@op(name="tool.execute")
 def execute(name: str, arg: str) -> str:
     """Run a tool by name with a single string argument. Always returns a string."""
     tool = get(name)

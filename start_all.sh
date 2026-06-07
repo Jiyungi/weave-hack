@@ -120,7 +120,22 @@ start_session() {
     exec tmux attach -t "$SESSION"
   fi
 
-  local act="source \"$VENV/bin/activate\""
+  # Durable/shared governance state: start a local Redis if available and point
+  # the control plane at it. If Redis isn't installed/reachable, state.py and
+  # audit.py fall back to in-memory automatically, so this is best-effort.
+  local redis_url="${REDIS_URL:-}"
+  if command -v redis-server >/dev/null 2>&1; then
+    redis-cli ping >/dev/null 2>&1 || redis-server --daemonize yes >/dev/null 2>&1 || true
+    redis_url="${redis_url:-redis://localhost:6379/0}"
+  fi
+
+  # ntkmirror is a clone on PYTHONPATH (its .pth can be wiped by pip/uv installs);
+  # exporting it here makes Track A's `import ntkmirror` self-heal on every start.
+  local ntk_src="${NTK_SRC:-$HOME/ntkmirror_src}/src"
+  local act="source \"$VENV/bin/activate\" && export PYTHONPATH=\"$ntk_src:\${PYTHONPATH:-}\""
+  if [ -n "$redis_url" ]; then
+    act="$act && export REDIS_URL=\"$redis_url\""
+  fi
   local repo_cd="cd \"$REPO\""
 
   # Do NOT auto-install vllm here: recent vllm wheels target CUDA 12.9/13.0,
@@ -166,6 +181,11 @@ cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true && \
   echo ""
   echo "  brain (vLLM) is OPTIONAL — only chat + Track D live reasoning need it."
   echo "  track-a + track-b are the governance demo and start on their own; track-d waits for :8100."
+  if [ -n "$redis_url" ]; then
+    echo "  state: Redis ($redis_url) — durable + shared"
+  else
+    echo "  state: in-memory (install redis-server for durable state)"
+  fi
   echo "  attach:       bash start_all.sh attach   (detach: Ctrl-b d)"
   echo "  status:       bash start_all.sh status"
   echo "  on laptop:    brev port-forward <instance> --port 3000:3000"

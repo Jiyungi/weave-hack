@@ -30,6 +30,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from control_plane.trace import op
+
 
 @dataclass
 class BrainConfig:
@@ -72,6 +74,7 @@ class Brain:
             self._client = OpenAI(base_url=self.cfg.base_url, api_key=self.cfg.api_key)
         return self._client
 
+    @op(name="brain.chat")
     def chat(self, messages: list[dict], **overrides) -> str:
         client = self._client_lazy()
         try:
