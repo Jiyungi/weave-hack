@@ -9,6 +9,7 @@ combine for *whom*.
 from __future__ import annotations
 
 import os
+import threading
 import time
 import uuid
 
@@ -233,6 +234,13 @@ def _needs_human(skill: str, sensitive: bool) -> bool:
     return bool(sensitive)
 
 
+# Serializes decide() so a request can't be approved twice concurrently -- e.g.
+# the auto-approve (inside request_capability) racing a human click during the
+# ~36s mint window, which would otherwise mint the controller twice. Per-process
+# (fine: a single control plane owns the decision path).
+_decide_lock = threading.Lock()
+
+
 def _public_request(rec: dict) -> dict:
     """Request view safe to return/snapshot (drops the bulky examples blob)."""
     out = {k: v for k, v in rec.items() if k != "examples"}
@@ -297,6 +305,11 @@ def deny_capability(request_id: str, *, decided_by: str = "human") -> dict:
 
 
 def _decide(request_id: str, *, approve: bool, decided_by: str) -> dict:
+    with _decide_lock:
+        return _decide_locked(request_id, approve=approve, decided_by=decided_by)
+
+
+def _decide_locked(request_id: str, *, approve: bool, decided_by: str) -> dict:
     rec = state.get_request(request_id)
     if rec is None:
         raise CPError(f"unknown capability request {request_id!r}")

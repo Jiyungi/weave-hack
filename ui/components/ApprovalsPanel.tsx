@@ -17,7 +17,11 @@ export function ApprovalsPanel() {
   const [err, setErr] = useState<string>("");
 
   const requests = state.requests ?? [];
-  const pending = requests.filter((r) => r.status === "pending");
+  // Only sensitive requests are meant for a human. Safe ones are auto-approved
+  // (they may briefly read as pending while their controller mints ~36s) -- show
+  // those as "processing", never with buttons, so a click can't race the auto path.
+  const awaiting = requests.filter((r) => r.status === "pending" && r.sensitive);
+  const processing = requests.filter((r) => r.status === "pending" && !r.sensitive);
   const decided = requests.filter((r) => r.status !== "pending").slice(0, 6);
 
   async function decide(r: CapabilityRequest, approve: boolean) {
@@ -38,8 +42,8 @@ export function ApprovalsPanel() {
     <Card
       title="Capability requests"
       badge={
-        pending.length > 0 ? (
-          <Pill variant="warn">{pending.length} awaiting you</Pill>
+        awaiting.length > 0 ? (
+          <Pill variant="warn">{awaiting.length} awaiting you</Pill>
         ) : (
           <Pill variant="muted">hybrid approval</Pill>
         )
@@ -57,13 +61,27 @@ export function ApprovalsPanel() {
         </div>
       )}
 
-      {pending.length === 0 && decided.length === 0 && (
+      {awaiting.length === 0 && processing.length === 0 && decided.length === 0 && (
         <div className="rounded-md border border-line bg-panel2/60 px-3 py-4 text-center text-[12px] text-muted">
           No requests yet. Run an agent on a task it can&apos;t do and watch it ask.
         </div>
       )}
 
-      {pending.map((r) => (
+      {processing.map((r) => (
+        <div
+          key={r.request_id}
+          className="mb-2 flex items-center gap-2 rounded-md border border-line bg-panel2/50 px-2.5 py-1.5 text-[11.5px]"
+        >
+          <Pill variant="muted">auto-approving…</Pill>
+          <span className="font-mono text-text">{r.skill}</span>
+          <span className="text-muted">→ {r.principal}</span>
+          {r.has_examples && (
+            <span className="ml-auto text-muted/70">minting ~36s</span>
+          )}
+        </div>
+      ))}
+
+      {awaiting.map((r) => (
         <div
           key={r.request_id}
           className="mb-2.5 rounded-lg border border-warn/30 bg-warn/[0.06] p-3"
