@@ -467,6 +467,14 @@ def _acquire_skill(principal: str, skill: str, reason: str, session_id: str,
                                  description=description)
     status = resp.get("status", "pending")
     decided_by = resp.get("decided_by", "") or ""
+    if status == "pending" and resp.get("session_revoke_block"):
+        step.request_status = "denied"
+        step.request_decided_by = "session_revoked"
+        step.note = (
+            f"{skill} was session-revoked; approve the pending request in the "
+            "Capabilities panel to override, or start a new chat (+)"
+        )
+        return step
     if status == "pending":
         status, decided_by = _await_decision(resp["request_id"])
     step.request_status = status
@@ -504,6 +512,7 @@ def run(principal: str, skills: list[str], task: str, *,
     session_id = sess["session_id"]
     authorized = list(sess.get("authorized", []))
     denied = list(sess.get("denied", []))
+    session_revoked = set(sess.get("session_revoked", []))
 
     brain = brain or get_brain()
 
@@ -517,7 +526,7 @@ def run(principal: str, skills: list[str], task: str, *,
             catalog = set(cp.state().get("skills", {}).keys())
         except Exception:  # noqa: BLE001 — self-improvement is best-effort
             catalog = set()
-        seen = set(authorized)
+        seen = set(authorized) | session_revoked
         for name in sorted(catalog | set(tools.registry())):
             if name in seen:
                 continue
@@ -566,6 +575,20 @@ def run(principal: str, skills: list[str], task: str, *,
             # Self-improvement: the brain asked for a capability it lacks.
             if step.requested_skill is not None and allow_requests:
                 skill = step.requested_skill
+                if skill in session_revoked:
+                    step.request_status = "denied"
+                    step.request_decided_by = "session_revoked"
+                    step.note = (
+                        f"{skill} was session-revoked for this chat; use authorized "
+                        "tools, start a new chat (+), or approve the pending request "
+                        "in Capabilities to override"
+                    )
+                    steps.append(step)
+                    messages.append({"role": "assistant",
+                                     "content": f"REQUEST: {skill} | {step.request_reason}"})
+                    messages.append({"role": "user", "content":
+                                     f"OBSERVATION: {step.note}"})
+                    continue
                 if step.request_status == "denied" and step.note:
                     steps.append(step)
                     messages.append({"role": "assistant",

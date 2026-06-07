@@ -13,6 +13,11 @@ export type CapabilityRequest = {
   controller_id?: string | null;
   created?: number;
   has_examples?: boolean;
+  session_revoke_block?: boolean;
+};
+
+export type CpSettings = {
+  auto_approve_enabled: boolean;
 };
 
 export type CpState = {
@@ -33,6 +38,7 @@ export type CpState = {
   >;
   requests?: CapabilityRequest[];
   memory?: { pending: Record<string, number> };
+  settings?: CpSettings;
 };
 
 export type AuditEvent = {
@@ -201,6 +207,12 @@ export const cp = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ request_id, decided_by }),
+    }),
+  setAutoApprove: (auto_approve_enabled: boolean) =>
+    fetchJson<CpSettings>("/api/cp/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auto_approve_enabled }),
     }),
   logInteraction: (user_id: string, user: string, assistant: string) =>
     fetchJson<{ user_id: string; pending_interactions: number }>("/api/cp/memory/log", {

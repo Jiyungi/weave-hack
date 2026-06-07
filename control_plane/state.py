@@ -12,6 +12,7 @@ Redis layout (decode_responses=True):
   cp:principal_sessions hash  principal:scope -> session_id (sticky reuse; scope = session_key or user_id)
   cp:requests         hash  request_id   -> json blob
   cp:interactions     hash  user_id      -> json list of chat turns (memory)
+  cp:settings         hash  key          -> value (e.g. auto_approve_enabled)
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ _SESS = "cp:sessions"
 _PRINC_SESS = "cp:principal_sessions"
 _REQ = "cp:requests"
 _INTERACTIONS = "cp:interactions"
+_SETTINGS = "cp:settings"
 
 _SESSION_SET_FIELDS = ("authorized", "capability", "session_revoked")
 
@@ -156,6 +158,16 @@ class State:
 
     def interaction_users(self) -> list[str]:
         return sorted(self._redis.hkeys(_INTERACTIONS))
+
+    def get_auto_approve_enabled(self) -> bool | None:
+        raw = self._redis.hget(_SETTINGS, "auto_approve_enabled")
+        if raw is None:
+            return None
+        return raw.lower() in ("1", "true", "yes")
+
+    def set_auto_approve_enabled(self, enabled: bool) -> None:
+        self._redis.hset(_SETTINGS, "auto_approve_enabled",
+                         "true" if enabled else "false")
 
 
 state = State()

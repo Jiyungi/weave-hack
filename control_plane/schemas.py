@@ -89,6 +89,10 @@ class ApprovalReq(BaseModel):
     decided_by: str = "human"
 
 
+class SettingsReq(BaseModel):
+    auto_approve_enabled: bool
+
+
 class MemoryLogReq(BaseModel):
     user_id: str
     user: str

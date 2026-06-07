@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ag, cp, OrchestratorResult } from "@/lib/api";
+import { needsHumanApproval } from "@/lib/capability-approval";
 import {
   ChatThread,
   loadThreads,
@@ -64,8 +65,9 @@ export function ChatPanel() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const agOk = !health.agError;
 
-  const awaitingApproval = (state.requests ?? []).filter(
-    (r) => r.status === "pending" && r.sensitive,
+  const autoApprove = state.settings?.auto_approve_enabled ?? true;
+  const awaitingApproval = (state.requests ?? []).filter((r) =>
+    needsHumanApproval(r, autoApprove),
   );
 
   const active = threads.find((t) => t.id === activeId) ?? threads[0];

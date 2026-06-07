@@ -15,7 +15,7 @@ from .track_a import TrackAError
 from .schemas import (ActGateReq, ActReq, ApprovalReq, CapabilityRequestReq, MemoryConsolidateReq,
                       MemoryLogReq, PersonalizeReq, PolicyRevokeReq,
                       PolicyReq, RegisterReq, RegisterSkillReq, RevokeReq,
-                      SessionReq, TrainSkillReq)
+                      SessionReq, SettingsReq, TrainSkillReq)
 
 app = FastAPI(title="OpenMirror Control Plane", version="0.1")
 # Re-parent ops under a caller's trace (Track D -> here) for one unified tree.
@@ -175,6 +175,11 @@ def approve_capability(req: ApprovalReq):
 @app.post("/capability/deny")
 def deny_capability(req: ApprovalReq):
     return store.deny_capability(req.request_id, decided_by=req.decided_by)
+
+
+@app.post("/settings")
+def update_settings(req: SettingsReq):
+    return store.set_auto_approve(req.auto_approve_enabled)
 
 
 @app.get("/capability/request/{request_id}")

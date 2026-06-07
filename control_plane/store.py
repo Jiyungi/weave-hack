@@ -177,11 +177,13 @@ def open_session(principal: str, requested_skills: list[str],
 
 def _session_response(session_id: str, s: dict, *, denied: list[str] | None = None) -> dict:
     denied = denied or []
+    revoked = sorted(s.get("session_revoked", set()))
     return {
         "session_id": session_id,
         "principal": s["principal"],
         "authorized": sorted(s["authorized"]),
         "denied": denied,
+        "session_revoked": revoked,
         "capability": sorted(s.get("capability", set())),
         "user_id": s.get("user_id"),
         "personalized": s.get("personalized", False),
@@ -233,7 +235,7 @@ def _create_bootstrap_session(principal: str, requested_skills: list[str],
     state.set_principal_session(principal, sid, scope)
     return {
         "session_id": sid, "principal": principal, "authorized": [],
-        "denied": denied, "capability": [],
+        "denied": denied, "session_revoked": [], "capability": [],
         "user_id": user_id, "personalized": personalized,
         "controller_id": controller_id, "reused": False, "bootstrap": True,
     }
@@ -278,7 +280,7 @@ def _create_session(principal: str, requested_skills: list[str],
                  user_id=user_id, personalized=personalized, controller_id=controller_id)
     state.set_principal_session(principal, sid, scope)
     out = {"session_id": sid, "principal": principal, "authorized": authorized,
-           "denied": denied, "capability": sorted(capability),
+           "denied": denied, "session_revoked": [], "capability": sorted(capability),
            "user_id": user_id, "personalized": personalized,
            "controller_id": controller_id, "reused": False}
     return out
@@ -396,12 +398,39 @@ def _force_auto() -> set[str]:
     return {s.strip() for s in os.environ.get("OPENMIRROR_AUTOAPPROVE", "").split(",") if s.strip()}
 
 
+def _env_auto_approve_default() -> bool:
+    return os.environ.get("OPENMIRROR_AUTO_APPROVE", "true").lower() not in (
+        "0", "false", "no",
+    )
+
+
+def auto_approve_enabled() -> bool:
+    """Runtime toggle: Redis setting overrides ``OPENMIRROR_AUTO_APPROVE`` env default."""
+    stored = state.get_auto_approve_enabled()
+    if stored is not None:
+        return stored
+    return _env_auto_approve_default()
+
+
 def _needs_human(skill: str, sensitive: bool) -> bool:
+    if not auto_approve_enabled():
+        return True
     if skill in _force_require():
         return True
     if skill in _force_auto():
         return False
     return bool(sensitive)
+
+
+@op(name="cp.set_auto_approve")
+def set_auto_approve(enabled: bool) -> dict:
+    state.set_auto_approve_enabled(bool(enabled))
+    audit.record("set_auto_approve", enabled=bool(enabled))
+    return get_settings()
+
+
+def get_settings() -> dict:
+    return {"auto_approve_enabled": auto_approve_enabled()}
 
 
 # Serializes decide() so a request can't be approved twice concurrently -- e.g.
@@ -415,7 +444,16 @@ def _public_request(rec: dict) -> dict:
     """Request view safe to return/snapshot (drops the bulky examples blob)."""
     out = {k: v for k, v in rec.items() if k != "examples"}
     out["has_examples"] = bool(rec.get("examples"))
+    if rec.get("session_revoke_block"):
+        out["session_revoke_block"] = True
     return out
+
+
+def _is_session_revoked(session_id: str | None, skill: str) -> bool:
+    if not session_id:
+        return False
+    s = state.get_session(session_id)
+    return bool(s and skill in s.get("session_revoked", set()))
 
 
 def _grant_into_session(skill: str, session_id: str | None) -> str | None:
@@ -472,6 +510,12 @@ def request_capability(principal: str, skill: str, *, reason: str = "",
                  skill=skill, sensitive=bool(sensitive), reason=reason,
                  session_id=session_id, mint=bool(examples) and not state.has_skill(skill),
                  n_examples=len(examples or []))
+    if _is_session_revoked(session_id, skill):
+        rec["session_revoke_block"] = True
+        state.set_request(rid, rec)
+        audit.record("request_capability_blocked", request_id=rid, principal=principal,
+                     skill=skill, session_id=session_id, reason="session_revoked")
+        return _public_request(rec)
     if not _needs_human(skill, sensitive):
         return _decide(rid, approve=True, decided_by="auto")
     return _public_request(rec)
@@ -499,6 +543,9 @@ def _decide_locked(request_id: str, *, approve: bool, decided_by: str) -> dict:
     if rec["status"] != "pending":
         return _public_request(rec)  # idempotent: already decided
     skill, principal = rec["skill"], rec["principal"]
+    if approve and decided_by == "auto" and _is_session_revoked(rec.get("session_id"), skill):
+        approve = False
+        decided_by = "session_revoked"
     if not approve:
         rec.update(status="denied", decided_by=decided_by)
         state.set_request(request_id, rec)
@@ -586,4 +633,5 @@ def snapshot() -> dict:
             "pending": {uid: len(state.get_interactions(uid))
                         for uid in state.interaction_users()},
         },
+        "settings": get_settings(),
     }

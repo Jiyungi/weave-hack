@@ -4,6 +4,7 @@ import { CopilotSidebar } from "@copilotkit/react-ui";
 import { DashboardProvider } from "@/lib/dashboard-context";
 import { CopilotActions } from "@/lib/copilot-actions";
 import { HealthBar } from "@/components/HealthBar";
+import { AutoApproveToggle } from "@/components/AutoApproveToggle";
 import { CapabilitiesPanel } from "@/components/CapabilitiesPanel";
 import { ExternalToolPanel } from "@/components/ExternalToolPanel";
 import { SessionPanel } from "@/components/SessionPanel";
@@ -32,7 +33,8 @@ export default function Home() {
             </span>
           </div>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <AutoApproveToggle compact />
           <HealthBar />
         </div>
       </header>

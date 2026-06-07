@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { cp, CapabilityRequest } from "@/lib/api";
+import { needsHumanApproval } from "@/lib/capability-approval";
 import { useDashboard } from "@/lib/dashboard-context";
+import { AutoApproveToggle } from "./AutoApproveToggle";
 import { Btn, Card, Pill } from "./ui";
 
 function StatusPill({ status }: { status: CapabilityRequest["status"] }) {
@@ -16,12 +18,17 @@ export function ApprovalsPanel() {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string>("");
 
+  const autoApprove = state.settings?.auto_approve_enabled ?? true;
   const requests = state.requests ?? [];
-  // Only sensitive requests are meant for a human. Safe ones are auto-approved
-  // (they may briefly read as pending while their controller mints ~36s) -- show
-  // those as "processing", never with buttons, so a click can't race the auto path.
-  const awaiting = requests.filter((r) => r.status === "pending" && r.sensitive);
-  const processing = requests.filter((r) => r.status === "pending" && !r.sensitive);
+  const awaiting = requests.filter((r) => needsHumanApproval(r, autoApprove));
+  const processing = autoApprove
+    ? requests.filter(
+        (r) =>
+          r.status === "pending" &&
+          !r.sensitive &&
+          !r.session_revoke_block,
+      )
+    : [];
   const decided = requests.filter((r) => r.status !== "pending").slice(0, 6);
 
   async function decide(r: CapabilityRequest, approve: boolean) {
@@ -45,14 +52,20 @@ export function ApprovalsPanel() {
         awaiting.length > 0 ? (
           <Pill variant="warn">{awaiting.length} awaiting you</Pill>
         ) : (
-          <Pill variant="muted">hybrid approval</Pill>
+          <Pill variant="muted">
+            {autoApprove ? "hybrid approval" : "manual approval"}
+          </Pill>
         )
       }
     >
+      <div className="mb-3">
+        <AutoApproveToggle />
+      </div>
+
       <p className="mb-3 text-[12px] leading-relaxed text-muted">
         When an agent hits a wall, it <b>asks</b> for the skill it needs — it never
-        grants itself. Safe skills are auto-approved; sensitive ones (needs a
-        key / spends money) wait for your decision here.
+        grants itself. Sensitive skills (needs a key / spends money) always wait
+        for you when auto-approve is on.
       </p>
 
       {err && (
@@ -91,6 +104,12 @@ export function ApprovalsPanel() {
               {r.skill}
             </span>
             {r.sensitive && <Pill variant="warn">sensitive</Pill>}
+            {r.session_revoke_block && (
+              <Pill variant="warn">session-revoked</Pill>
+            )}
+            {!autoApprove && !r.sensitive && !r.session_revoke_block && (
+              <Pill variant="muted">manual mode</Pill>
+            )}
             {r.has_examples && <Pill variant="muted">will mint ~36s</Pill>}
           </div>
           <div className="mb-1 text-[12px] text-muted">
