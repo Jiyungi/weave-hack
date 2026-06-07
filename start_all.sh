@@ -148,7 +148,8 @@ uvicorn agent_service:app --host 0.0.0.0 --port 8200" C-m
 
   tmux new-window -t "$SESSION" -n ui
   tmux send-keys -t "$SESSION:ui" \
-    "cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true && npm run dev" C-m
+    "cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true && \
+{ [ -x node_modules/.bin/next ] || npm install --no-audit --no-fund; } && npm run dev" C-m
 
   tmux select-window -t "$SESSION:brain"
 

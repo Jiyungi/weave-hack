@@ -85,7 +85,7 @@ def health():
 
 
 @app.get("/state")
-def state():
+def get_state():
     return store.snapshot()
 
 
