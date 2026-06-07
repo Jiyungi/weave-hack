@@ -40,120 +40,10 @@ from .workers import worker_scope_guidance
 APPROVAL_TIMEOUT_S = float(os.environ.get("OPENMIRROR_APPROVAL_TIMEOUT_S", "120"))
 APPROVAL_POLL_S = float(os.environ.get("OPENMIRROR_APPROVAL_POLL_S", "2"))
 _OBS_MAX = int(os.environ.get("OPENMIRROR_OBS_MAX_CHARS", "600"))
-_STYLE_MAX = int(os.environ.get("OPENMIRROR_STYLE_MAX_NEW_TOKENS", "128"))
 
 
 def _clip_obs(text: str) -> str:
     return grounding.clip_observation(text, _OBS_MAX)
-
-
-def _act_prompt(task: str) -> str:
-    return f"User: {task}\nAssistant:"
-
-
-def _completion_is_prose(completion: str) -> bool:
-    from control_plane.runtime import extract_tool_calls
-
-    text = (completion or "").strip()
-    if not text:
-        return False
-    return not extract_tool_calls(text)
-
-
-def _style_tokens(max_new_tokens: int) -> int:
-    return max(max_new_tokens, _STYLE_MAX)
-
-
-@op(name="agent.styled_completion")
-def styled_completion(session_id: str, task: str, *, max_new_tokens: int,
-                      fallback: str = "") -> str:
-    """Run ``/act`` on a personalized session controller for natural-language output."""
-    try:
-        out = cp.act(session_id, _act_prompt(task),
-                     max_new_tokens=_style_tokens(max_new_tokens))
-        comp = (out.get("completion") or "").strip()
-        if _completion_is_prose(comp):
-            return comp.lstrip()
-    except cp.ControlPlaneError:
-        pass
-    return fallback
-
-
-def _user_has_style(user_id: str) -> bool:
-    try:
-        return bool(cp.state().get("personalization", {}).get(user_id))
-    except Exception:  # noqa: BLE001
-        return False
-
-
-@op(name="agent.styled_completion_for_user")
-def styled_completion_for_user(user_id: str, principal: str, skills: list[str],
-                               task: str, *, max_new_tokens: int,
-                               fallback: str = "",
-                               session_key: str | None = None) -> str:
-    """Open (or reuse) a session with ``user_style-{user_id}`` composed in."""
-    if not user_id or not _user_has_style(user_id):
-        return fallback
-    key = session_key or f"style-{user_id}"
-    try:
-        sess = cp.open_session(principal, skills, user_id=user_id,
-                               session_key=key, reuse=True)
-        if not sess.get("personalized"):
-            return fallback
-        return styled_completion(sess["session_id"], task,
-                                 max_new_tokens=max_new_tokens, fallback=fallback)
-    except cp.ControlPlaneError:
-        return fallback
-
-
-def _styled_passes_grounding(styled: str, *, ground_task: str, evidence: str,
-                             had_tool_steps: bool, original: str) -> bool:
-    has_useful = bool(evidence.strip())
-    issue = grounding.final_grounding_issue(
-        styled,
-        evidence,
-        require_evidence=had_tool_steps and not has_useful,
-    )
-    if issue:
-        return False
-    if not grounding.final_completeness_issue(
-        ground_task, styled, evidence, had_delegations=had_tool_steps,
-    ):
-        orig = grounding.extract_claim_tokens(original)
-        ev = grounding.extract_claim_tokens(evidence)
-        required = orig & ev
-        if required and not required <= grounding.extract_claim_tokens(styled):
-            return False
-        return True
-    return False
-
-
-@op(name="agent.personalize_final")
-def personalize_final(*, session_id: str | None, user_id: str | None,
-                      principal: str, skills: list[str], task: str,
-                      answer: str, evidence: str = "",
-                      ground_task: str | None = None,
-                      had_tool_steps: bool = False,
-                      max_new_tokens: int = 64,
-                      session_key: str | None = None) -> str:
-    """Apply ``user_style`` via composed 7B ``/act`` when grounding still holds."""
-    ground_task = ground_task or task
-    styled = ""
-    if session_id:
-        styled = styled_completion(session_id, task, max_new_tokens=max_new_tokens,
-                                   fallback="")
-    elif user_id:
-        styled = styled_completion_for_user(
-            user_id, principal, skills, task,
-            max_new_tokens=max_new_tokens, fallback="",
-            session_key=session_key,
-        )
-    if not styled or styled == answer:
-        return answer
-    if _styled_passes_grounding(styled, ground_task=ground_task, evidence=evidence,
-                                had_tool_steps=had_tool_steps, original=answer):
-        return styled
-    return answer
 
 
 SYSTEM_TEMPLATE = """You are an agent named '{principal}'.
@@ -660,7 +550,6 @@ def run(principal: str, skills: list[str], task: str, *,
     sess = cp.open_session(principal, skills, compose_skills=compose_skills,
                            user_id=user_id, session_key=session_key)
     session_id = sess["session_id"]
-    personalized = bool(sess.get("personalized"))
     authorized = list(sess.get("authorized", []))
     denied = list(sess.get("denied", []))
     session_revoked = set(sess.get("session_revoked", []))
@@ -751,20 +640,6 @@ def run(principal: str, skills: list[str], task: str, *,
                                      "content": f"OBSERVATION: {issue} "
                                      "Run another ACTION or revise FINAL."})
                     continue
-                if personalized and step.final:
-                    step.final = personalize_final(
-                        session_id=session_id,
-                        user_id=user_id,
-                        principal=principal,
-                        skills=skills,
-                        task=task,
-                        answer=step.final,
-                        evidence=evidence,
-                        ground_task=ground_task,
-                        had_tool_steps=bool(steps),
-                        max_new_tokens=max_new_tokens,
-                        session_key=session_key,
-                    )
                 steps.append(step)
                 stopped_reason = "final"
                 break

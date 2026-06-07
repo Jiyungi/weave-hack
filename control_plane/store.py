@@ -353,6 +353,27 @@ def act_gate(session_id: str, skill: str, prompt: str, max_new_tokens: int) -> d
     }
 
 
+@op(name="cp.act_style")
+def act_style(user_id: str, prompt: str, max_new_tokens: int) -> dict:
+    """Style-only inference: ``user_style-{user_id}`` solo controller, no tools.
+
+    Personalization adapters learn HOW (tone/format), not tool emits. Running
+    them alone avoids style+tool compose interference on natural-language answers.
+    """
+    style_id = state.get_personalization(user_id)
+    if not style_id:
+        raise CPError(f"no personalization adapter for user {user_id!r}")
+    out = track_a.execute(style_id, prompt, max_new_tokens)
+    completion = out["completion"]
+    audit.record("act_style", user_id=user_id, controller_id=style_id,
+                 prompt=prompt, completion=completion)
+    return {
+        "user_id": user_id,
+        "controller_id": style_id,
+        "completion": completion,
+    }
+
+
 @op(name="cp.revoke")
 def revoke(session_id: str, skill: str) -> dict:
     s = get_session(session_id)

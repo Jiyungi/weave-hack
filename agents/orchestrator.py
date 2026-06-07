@@ -315,67 +315,6 @@ def _synthesize_when_exhausted(task: str, delegations: list[Delegation]) -> str:
     return f"Could not verify an answer for: {task}"
 
 
-def _delegation_evidence(delegations: list[Delegation]) -> str:
-    parts: list[str] = []
-    for d in delegations:
-        if not d.result:
-            continue
-        for step in d.result.steps:
-            parts.extend(step.observations)
-        if d.result.final_answer:
-            parts.append(d.result.final_answer)
-    return "\n".join(parts)
-
-
-def _style_session_target(delegations: list[Delegation],
-                          snap: dict) -> tuple[str, list[str]]:
-    policies = snap.get("policies", {})
-    for d in reversed(delegations):
-        worker = d.worker
-        if worker and worker not in ("(planner)", ""):
-            skills = list(policies.get(worker, []))
-            if skills:
-                return worker, skills
-    for principal in ("research-agent", "ops-agent", "exec-assistant"):
-        skills = list(policies.get(principal, []))
-        if skills:
-            return principal, skills
-    return "exec-assistant", ["web_search"]
-
-
-def _orchestrator_personalize(task: str, answer: str, *,
-                              user_id: str | None,
-                              chat_id: str | None,
-                              delegations: list[Delegation],
-                              worker_max_new_tokens: int) -> str:
-    if not user_id or not answer:
-        return answer
-    try:
-        snap = cp.state()
-    except Exception:  # noqa: BLE001
-        return answer
-    if not snap.get("personalization", {}).get(user_id):
-        return answer
-    principal, skills = _style_session_target(delegations, snap)
-    evidence = _delegation_evidence(delegations)
-    had_tools = any(
-        d.result and d.result.steps for d in delegations
-    )
-    return loop.personalize_final(
-        session_id=None,
-        user_id=user_id,
-        principal=principal,
-        skills=skills,
-        task=task,
-        answer=answer,
-        evidence=evidence,
-        ground_task=task,
-        had_tool_steps=had_tools,
-        max_new_tokens=worker_max_new_tokens,
-        session_key=f"orch-{chat_id or user_id}",
-    )
-
-
 @op(name="orch.delegate")
 def _delegate(worker: WorkerSpec, subtask: str, *, max_steps: int,
               max_new_tokens: int, brain: Brain,
@@ -499,15 +438,6 @@ def run(task: str, *,
     if final_answer is None and stopped_reason == "max_delegations":
         final_answer = _synthesize_when_exhausted(task, delegations)
         stopped_reason = "exhausted"
-
-    if final_answer:
-        final_answer = _orchestrator_personalize(
-            task, final_answer,
-            user_id=user_id,
-            chat_id=chat_id,
-            delegations=delegations,
-            worker_max_new_tokens=worker_max_new_tokens,
-        )
 
     if user_id and final_answer:
         try:

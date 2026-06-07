@@ -58,6 +58,12 @@ export type ActResult = {
   authorized: string[];
 };
 
+export type ActStyleResult = {
+  user_id: string;
+  controller_id: string;
+  completion: string;
+};
+
 export type SessionResult = {
   session_id: string;
   principal: string;
@@ -173,11 +179,17 @@ export const cp = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
-  act: (session_id: string, prompt: string, max_new_tokens = 128) =>
+  act: (session_id: string, prompt: string, max_new_tokens = 16) =>
     fetchJson<ActResult>("/api/cp/act", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id, prompt, max_new_tokens }),
+    }),
+  actStyle: (user_id: string, prompt: string, max_new_tokens = 64) =>
+    fetchJson<ActStyleResult>("/api/cp/act/style", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id, prompt, max_new_tokens }),
     }),
   revoke: (session_id: string, skill: string) =>
     fetchJson<Record<string, unknown>>("/api/cp/revoke", {

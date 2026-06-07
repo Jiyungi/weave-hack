@@ -59,6 +59,13 @@ class ActGateReq(BaseModel):
     max_new_tokens: int = config.DEFAULT_MAX_NEW_TOKENS
 
 
+class ActStyleReq(BaseModel):
+    """Run inference on ``user_style-{user_id}`` only (no tool compose)."""
+    user_id: str
+    prompt: str
+    max_new_tokens: int = config.STYLE_MAX_NEW_TOKENS
+
+
 class RevokeReq(BaseModel):
     session_id: str
     skill: str

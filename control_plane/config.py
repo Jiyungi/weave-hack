@@ -15,3 +15,4 @@ AUDIT_STREAM = os.environ.get("CP_AUDIT_STREAM", "cp:audit")
 
 # Short generations: the synthetic tool calls are emitted in the first few tokens.
 DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("CP_MAX_NEW_TOKENS", "16"))
+STYLE_MAX_NEW_TOKENS = int(os.environ.get("CP_STYLE_MAX_NEW_TOKENS", "64"))
