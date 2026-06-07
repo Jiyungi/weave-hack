@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ag, OrchestratorResult } from "@/lib/api";
 import { useDashboard } from "@/lib/dashboard-context";
-import { Btn, Card, Input, Pill, Status } from "./ui";
+import { Btn, Card, Input, Label, Pill, Status } from "./ui";
 import { DelegationCard } from "./DelegationTree";
 
 export function AgentsPanel() {
@@ -11,6 +11,7 @@ export function AgentsPanel() {
   const [task, setTask] = useState(
     "What's the weather in Berlin? Also tell me about Alan Turing.",
   );
+  const [userId, setUserId] = useState("");
   const [status, setStatus] = useState("");
   const [result, setResult] = useState<OrchestratorResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -26,7 +27,7 @@ export function AgentsPanel() {
     setResult(null);
     setStatus("running orchestrator…");
     try {
-      const r = await ag.run(task.trim());
+      const r = await ag.run(task.trim(), userId.trim() || undefined);
       setResult(r);
       setStatus(
         `done · ${r.stopped_reason} · ${r.delegations.length} delegation(s)`,
@@ -55,6 +56,8 @@ export function AgentsPanel() {
         <code>exec-assistant</code> &amp; <code>support-bot</code>)
       </p>
       <Input value={task} onChange={setTask} />
+      <Label className="mt-2">User ID (optional — compose user_style + log chats)</Label>
+      <Input value={userId} onChange={setUserId} placeholder="alice" />
       <div className="mt-1 flex flex-wrap gap-1.5">
         <Btn variant="ghost" onClick={() => setTask("What's the weather in Berlin?")}>
           weather only

@@ -113,3 +113,14 @@ def state() -> dict:
 
 def health() -> dict:
     return _request("GET", "/health")
+
+
+@op(name="cp_client.memory_log")
+def log_interaction(user_id: str, user: str, assistant: str) -> dict:
+    return _request("POST", "/memory/log",
+                    {"user_id": user_id, "user": user, "assistant": assistant})
+
+
+@op(name="cp_client.memory_consolidate")
+def consolidate_user(user_id: str) -> dict:
+    return _request("POST", "/memory/consolidate", {"user_id": user_id}, timeout=1800)

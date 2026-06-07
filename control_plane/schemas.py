@@ -70,6 +70,16 @@ class ApprovalReq(BaseModel):
     decided_by: str = "human"
 
 
+class MemoryLogReq(BaseModel):
+    user_id: str
+    user: str
+    assistant: str
+
+
+class MemoryConsolidateReq(BaseModel):
+    user_id: str
+
+
 class RegisterReq(BaseModel):
     """One-shot 'committee' registration: mint -> register -> grant.
 

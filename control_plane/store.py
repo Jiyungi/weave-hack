@@ -348,6 +348,40 @@ def get_capability_request(request_id: str) -> dict:
     return _public_request(rec)
 
 
+# ---------------------------------------------------------------------------
+# Memory track — chat logs → consolidation → user_style adapter
+# ---------------------------------------------------------------------------
+
+@op(name="cp.memory_log")
+def log_interaction(user_id: str, user: str, assistant: str) -> dict:
+    """Append one chat turn for later consolidation (deleted after mint)."""
+    user_id = user_id.strip()
+    if not user_id:
+        raise CPError("user_id required")
+    if not user.strip() or not assistant.strip():
+        raise CPError("user and assistant messages required")
+    n = state.append_interaction(user_id, {"user": user.strip(), "assistant": assistant.strip()})
+    audit.record("memory_log", user_id=user_id, count=n)
+    return {"user_id": user_id, "logged": True, "pending_interactions": n}
+
+
+def get_interactions(user_id: str) -> list[dict]:
+    return state.get_interactions(user_id)
+
+
+def clear_interactions(user_id: str) -> int:
+    n = state.clear_interactions(user_id)
+    audit.record("memory_clear", user_id=user_id, deleted=n)
+    return n
+
+
+@op(name="cp.memory_consolidate")
+def consolidate_user(user_id: str) -> dict:
+    """Run memory consolidation (curate → personalize → delete logs)."""
+    from memory.consolidate import consolidate_user as _run
+    return _run(user_id)
+
+
 def snapshot() -> dict:
     return {
         "skills": state.all_skills(),
@@ -362,4 +396,8 @@ def snapshot() -> dict:
                      for sid, v in state.all_sessions().items()},
         "requests": sorted((_public_request(r) for r in state.all_requests().values()),
                            key=lambda r: r.get("created", 0), reverse=True),
+        "memory": {
+            "pending": {uid: len(state.get_interactions(uid))
+                        for uid in state.interaction_users()},
+        },
     }

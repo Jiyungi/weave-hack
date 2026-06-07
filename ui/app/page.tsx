@@ -12,6 +12,7 @@ import { ActPanel } from "@/components/ActPanel";
 import { AuditFeed } from "@/components/AuditFeed";
 import { AgentsPanel } from "@/components/AgentsPanel";
 import { ApprovalsPanel } from "@/components/ApprovalsPanel";
+import { MemoryPanel } from "@/components/MemoryPanel";
 
 export default function Home() {
   return (
@@ -39,6 +40,7 @@ export default function Home() {
       <main className="mx-auto flex max-w-[1400px] flex-col gap-5 p-5 pb-28 lg:px-6">
         {/* Hero: the product — autonomous governed agents */}
         <AgentsPanel />
+        <MemoryPanel />
 
         {/* Provision (what can be done + by whom) and Observe (what happened) */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">

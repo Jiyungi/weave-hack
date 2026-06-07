@@ -191,6 +191,11 @@ cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true && \
   echo "  on laptop:    brev port-forward <instance> --port 3000:3000"
   echo "  open:         http://localhost:3000"
   echo ""
+  echo "  memory: log chats with user_id (Agents panel) → consolidate:"
+  echo "          python scripts/consolidate_memory.py --user alice"
+  echo "          (or: python -m memory.consolidate --user alice)"
+  echo "          Redis recommended for durable interaction logs (REDIS_URL in .env)."
+  echo ""
 }
 
 case "$CMD" in

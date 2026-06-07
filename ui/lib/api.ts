@@ -31,6 +31,7 @@ export type CpState = {
     }
   >;
   requests?: CapabilityRequest[];
+  memory?: { pending: Record<string, number> };
 };
 
 export type AuditEvent = {
@@ -186,6 +187,25 @@ export const cp = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ request_id, decided_by }),
     }),
+  logInteraction: (user_id: string, user: string, assistant: string) =>
+    fetchJson<{ user_id: string; pending_interactions: number }>("/api/cp/memory/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id, user, assistant }),
+    }),
+  consolidateUser: (user_id: string) =>
+    fetchJson<{
+      user_id: string;
+      controller_id: string;
+      curated_pairs: number;
+      logs_deleted: number;
+      loss_first?: number;
+      loss_last?: number;
+    }>("/api/cp/memory/consolidate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id }),
+    }),
 };
 
 export const ag = {
@@ -201,11 +221,11 @@ export const ag = {
       available_skills: string[];
     }>("/api/ag/agents"),
   tools: () => fetchJson<{ tools: ToolSchema[] }>("/api/ag/tools"),
-  run: (task: string) =>
+  run: (task: string, user_id?: string) =>
     fetchJson<OrchestratorResult>("/api/ag/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ task }),
+      body: JSON.stringify({ task, user_id: user_id || undefined }),
     }),
   agentRun: (body: {
     principal: string;

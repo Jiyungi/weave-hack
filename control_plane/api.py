@@ -12,7 +12,8 @@ from .audit import audit
 from .state import state
 from .store import CPError
 from .track_a import TrackAError
-from .schemas import (ActReq, ApprovalReq, CapabilityRequestReq, PersonalizeReq,
+from .schemas import (ActReq, ApprovalReq, CapabilityRequestReq, MemoryConsolidateReq,
+                      MemoryLogReq, PersonalizeReq,
                       PolicyReq, RegisterReq, RegisterSkillReq, RevokeReq,
                       SessionReq, TrainSkillReq)
 
@@ -171,3 +172,18 @@ def get_capability_request(request_id: str):
 @app.get("/audit")
 def get_audit(n: int = 50):
     return {"events": audit.tail(n)}
+
+
+@app.post("/memory/log")
+def memory_log(req: MemoryLogReq):
+    return store.log_interaction(req.user_id, req.user, req.assistant)
+
+
+@app.post("/memory/consolidate")
+def memory_consolidate(req: MemoryConsolidateReq):
+    return store.consolidate_user(req.user_id)
+
+
+@app.get("/memory/pending")
+def memory_pending():
+    return store.snapshot()["memory"]

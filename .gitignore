@@ -1,6 +1,12 @@
 # Python
 __pycache__/
+*.py[cod]
 *.pyc
+*.egg-info/
+.pytest_cache/
+.hypothesis/
+build/
+dist/
 
 # Track B runtime audit log (regenerated at runtime)
 control_plane_audit.jsonl
@@ -11,13 +17,35 @@ venv/
 
 # Secrets / local environment (never commit API keys)
 .env
+.env.*
 *.env
 !.env.example
 !ui/.env.example
 
-# Node / Next.js
+# Node / Next.js (Track C)
 ui/node_modules/
 ui/.next/
 ui/*.tsbuildinfo
-agents/external_tools.json
 ui/out/
+node_modules/
+*.log
+npm-debug.log*
+
+# Legacy WeaveSelf app (merged for reference; OpenMirror UI is ui/)
+app/dist/
+app/node_modules/
+
+# OpenMirror runtime / local data
+agents/external_tools.json
+data/adapters/
+data/demo/
+data/source/
+data/*.json
+ml/wandb/
+ml/.hf-cache/
+.hf-cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/

@@ -72,6 +72,7 @@ class RunReq(BaseModel):
     worker_max_steps: int = 4
     worker_max_new_tokens: int = 32
     ensure_seeded: bool = True
+    user_id: str | None = None
 
 
 class AgentRunReq(BaseModel):
@@ -183,6 +184,7 @@ def run(req: RunReq):
         worker_max_steps=req.worker_max_steps,
         worker_max_new_tokens=req.worker_max_new_tokens,
         ensure_seeded=req.ensure_seeded,
+        user_id=req.user_id,
     )
     return result.to_dict()
 

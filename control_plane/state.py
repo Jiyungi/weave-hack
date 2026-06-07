@@ -32,6 +32,7 @@ _POLICY = "cp:policy"
 _PERS = "cp:personalization"
 _SESS = "cp:sessions"
 _REQ = "cp:requests"
+_INTERACTIONS = "cp:interactions"  # hash user_id -> json list of chat turns
 
 _SESSION_SET_FIELDS = ("authorized", "capability")
 
@@ -62,6 +63,7 @@ class State:
         self._personalization: dict[str, str] = {}
         self._sessions: dict[str, dict] = {}
         self._requests: dict[str, dict] = {}
+        self._interactions: dict[str, list[dict]] = {}
         if config.REDIS_URL:
             try:
                 import redis  # optional dependency
@@ -165,6 +167,36 @@ class State:
         if self._redis is not None:
             return {rid: json.loads(v) for rid, v in self._redis.hgetall(_REQ).items()}
         return dict(self._requests)
+
+    # ----- chat interactions (memory track — deleted after consolidation) ------
+    def append_interaction(self, user_id: str, interaction: dict) -> int:
+        if self._redis is not None:
+            raw = self._redis.hget(_INTERACTIONS, user_id)
+            items = json.loads(raw) if raw else []
+            items.append(interaction)
+            self._redis.hset(_INTERACTIONS, user_id, json.dumps(items))
+            return len(items)
+        self._interactions.setdefault(user_id, []).append(interaction)
+        return len(self._interactions[user_id])
+
+    def get_interactions(self, user_id: str) -> list[dict]:
+        if self._redis is not None:
+            raw = self._redis.hget(_INTERACTIONS, user_id)
+            return json.loads(raw) if raw else []
+        return list(self._interactions.get(user_id, []))
+
+    def clear_interactions(self, user_id: str) -> int:
+        n = len(self.get_interactions(user_id))
+        if self._redis is not None:
+            self._redis.hdel(_INTERACTIONS, user_id)
+        else:
+            self._interactions.pop(user_id, None)
+        return n
+
+    def interaction_users(self) -> list[str]:
+        if self._redis is not None:
+            return sorted(self._redis.hkeys(_INTERACTIONS))
+        return sorted(self._interactions.keys())
 
 
 state = State()

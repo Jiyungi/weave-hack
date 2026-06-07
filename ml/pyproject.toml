@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weaveself"
+version = "0.1.0"
+description = "WeaveSelf — local overnight weight-memory personalization engine (Python ML side)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.6,<3",
+    "safetensors>=0.4.2,<1",
+    "numpy>=1.26,<3",
+    "langgraph>=0.2,<1",
+]
+
+[project.scripts]
+weaveself-serve = "weaveself.serving.server:run_server"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9",
+    "hypothesis>=6.100,<7",
+    # FastAPI + httpx let the Inference_API service tests run with the
+    # in-process TestClient without a live server.
+    "fastapi>=0.110,<1",
+    "httpx>=0.27,<1",
+]
+# The Inference_API HTTP service (FastAPI). Kept as an optional extra so the
+# contracts/engine install stays light; the StubBackend default makes the app
+# runnable without the heavy ``serving`` (torch) extra.
+api = [
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.27,<1",
+    # Loads the repo-root .env for the server + prepare_demo entrypoints.
+    "python-dotenv>=1.0,<2",
+    # Live Redis_Layer client (file fallback used when unavailable).
+    "redis>=5.0,<6",
+]
+# Heavy ML runtime deps for real Base_Model serving (HFBackend). NOT a hard
+# runtime dependency: the StubBackend and the contracts work without these, so
+# the contracts/test install stays light and CI never downloads multi-GB weights.
+serving = [
+    "torch>=2.2,<3",
+    "transformers>=4.40,<5",
+]
+# Weave / W&B proof-layer logging (Req 14.5). Optional so the contract/test
+# install stays light; the eval runs with a NullLogger when these are absent.
+eval = [
+    "weave>=0.51",
+    "wandb>=0.17",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["weaveself*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "weaveself"]
+python_files = ["test_*.py", "*_test.py"]

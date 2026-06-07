@@ -531,6 +531,11 @@ def run(principal: str, skills: list[str], task: str, *,
             messages.append({"role": "user", "content": _format_observation(step)})
 
     final_answer = steps[-1].final if steps and steps[-1].final else None
+    if user_id and final_answer:
+        try:
+            cp.log_interaction(user_id, task, final_answer)
+        except Exception:  # noqa: BLE001 — memory logging is best-effort
+            pass
     return RunResult(
         principal=principal,
         task=task,

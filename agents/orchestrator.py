@@ -209,7 +209,8 @@ def _parse_orchestrator(text: str) -> tuple[str, Optional[tuple[str, str]], Opti
 
 @op(name="orch.delegate")
 def _delegate(worker: Worker, subtask: str, *, max_steps: int,
-              max_new_tokens: int, brain: Brain) -> Delegation:
+              max_new_tokens: int, brain: Brain,
+              user_id: str | None = None) -> Delegation:
     """Run one worker on one sub-task; tolerate worker errors."""
     d = Delegation(worker=worker.name, subtask=subtask)
     try:
@@ -220,6 +221,7 @@ def _delegate(worker: Worker, subtask: str, *, max_steps: int,
             max_steps=max_steps,
             max_new_tokens=max_new_tokens,
             brain=brain,
+            user_id=user_id,
         )
     except Exception as e:  # noqa: BLE001
         d.note = f"{type(e).__name__}: {e}"
@@ -233,7 +235,8 @@ def run(task: str, *,
         worker_max_steps: int = 4,
         worker_max_new_tokens: int = 32,
         brain: Brain | None = None,
-        ensure_seeded: bool = True) -> OrchestratorResult:
+        ensure_seeded: bool = True,
+        user_id: str | None = None) -> OrchestratorResult:
     """Run the orchestrator end-to-end on a task."""
     workers = workers or default_workers()
     if ensure_seeded:
@@ -304,11 +307,17 @@ def run(task: str, *,
             d = _delegate(by_name[worker_name], subtask,
                           max_steps=worker_max_steps,
                           max_new_tokens=worker_max_new_tokens,
-                          brain=brain)
+                          brain=brain, user_id=user_id)
             d.thought = thought
             delegations.append(d)
             messages.append({"role": "assistant", "content": raw.strip()})
             messages.append({"role": "user", "content": d.summarize()})
+
+    if user_id and final_answer:
+        try:
+            cp.log_interaction(user_id, task, final_answer)
+        except Exception:  # noqa: BLE001
+            pass
 
     return OrchestratorResult(
         task=task,
