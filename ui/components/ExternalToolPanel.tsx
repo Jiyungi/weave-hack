@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ag, McpToolInfo } from "@/lib/api";
 import { useDashboard } from "@/lib/dashboard-context";
+import { grantsForSkill } from "@/lib/workers";
 import { Btn, Card, Input, Label, Pill, Status } from "./ui";
 
 type Mode = "mcp" | "http";
@@ -69,7 +70,7 @@ export function ExternalToolPanel() {
         input_schema: t.input_schema ?? null,
         transport,
         headers: authHeaders(),
-        grants: { "exec-assistant": [t.name] },
+        grants: grantsForSkill(t.name),
       });
       setStatus(`registered ${t.name}`);
       await refresh();
@@ -99,7 +100,7 @@ export function ExternalToolPanel() {
         description: httpDesc.trim() || `HTTP tool ${name}`,
         url_template: httpUrl.trim(),
         method: httpMethod,
-        grants: { "exec-assistant": [name] },
+        grants: grantsForSkill(name),
       });
       setStatus(`registered ${name}`);
       setHttpName("");

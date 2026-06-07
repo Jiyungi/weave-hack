@@ -80,6 +80,7 @@ class RunReq(BaseModel):
     user_id: str | None = None
     chat_id: str | None = None
     history: list[ChatTurn] = []
+    force_worker: str | None = None
 
 
 class AgentRunReq(BaseModel):
@@ -194,6 +195,7 @@ def run(req: RunReq):
         user_id=req.user_id,
         chat_id=req.chat_id,
         history=[t.model_dump() for t in req.history],
+        force_worker=req.force_worker,
     )
     return result.to_dict()
 

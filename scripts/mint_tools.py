@@ -3,15 +3,15 @@
 For each tool in ``agents.tools_extra``, calls the control plane's one-shot
 committee endpoint ``POST {CP_URL}/register`` with the tool's
 ``training_examples()`` so the NTK engine mints a ~100 KB controller (~36 s
-each), registers the skill, and grants it to a principal (default
-``exec-assistant``).
+each), registers the skill, and grants it to role owner(s) via
+``agents.workers.grants_for_skill``.
 
 Requires the control plane (:8100) and NTK engine (:8000) to be running.
 
 Usage (on the Brev box, venv active):
     python -m scripts.mint_tools                 # mint all extra tools
     python -m scripts.mint_tools --names currency unit_convert
-    python -m scripts.mint_tools --principal exec-assistant
+    python -m scripts.mint_tools --principal research-agent  # override owners
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from agents import tools_extra  # noqa: E402
+from agents.workers import grants_for_skill  # noqa: E402
 
 CP_URL = os.environ.get("CP_URL", "http://127.0.0.1:8100").rstrip("/")
 
@@ -48,8 +49,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Mint extra-tool controllers.")
     parser.add_argument("--names", nargs="*", default=None,
                         help="Subset of tool names to mint (default: all extra tools).")
-    parser.add_argument("--principal", default="exec-assistant",
-                        help="Principal to grant the minted skills to.")
+    parser.add_argument("--principal", default=None,
+                        help="If set, grant all minted skills to this principal only "
+                        "(default: role owners from agents.workers).")
     args = parser.parse_args(argv)
 
     tools = tools_extra.extra_tools()
@@ -60,15 +62,18 @@ def main(argv: list[str] | None = None) -> int:
         print("no matching tools to mint", file=sys.stderr)
         return 1
 
+    grant_label = args.principal or "role owners"
     print(f"Minting {len(tools)} tool controllers via {CP_URL}/register "
-          f"(granting to {args.principal!r})...", flush=True)
+          f"(granting to {grant_label})...", flush=True)
     ok, fail = [], []
     for i, t in enumerate(tools, 1):
+        grants = ({args.principal: []} if args.principal
+                  else grants_for_skill(t.name))
         payload = {
             "skill": t.name,
             "description": t.description,
             "examples": t.training_examples(),
-            "grants": {args.principal: []},
+            "grants": grants,
         }
         t0 = time.time()
         try:
@@ -84,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     if fail:
         print("failed:", ", ".join(fail))
         return 1
-    print("granted to:", args.principal)
+    print("granted to:", grant_label)
     print("Re-run a chat with that worker to use the new tools.")
     return 0
 

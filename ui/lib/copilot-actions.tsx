@@ -4,6 +4,7 @@ import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 import { ag, cp } from "@/lib/api";
 import { useDashboard } from "@/lib/dashboard-context";
 import { DelegationCard } from "@/components/DelegationTree";
+import { grantsForSkill, SEED_POLICIES } from "@/lib/workers";
 import { Pill } from "@/components/ui";
 
 /** Register all CopilotKit readables + actions for the OpenMirror control surface. */
@@ -33,16 +34,17 @@ export function CopilotActions() {
   useCopilotAction({
     name: "seed_demo",
     description:
-      "Train weather + calendar skill controllers on Track A and set default policies for support-bot and exec-assistant. Takes ~72s.",
+      "Train weather + calendar controllers and set role policies (research-agent, ops-agent, support-agent). Takes ~72s.",
     parameters: [],
     handler: async () => {
       for (const skill of ["weather", "calendar"] as const) {
-        await ag.registerTool(skill);
+        await ag.registerTool(skill, grantsForSkill(skill));
       }
-      await cp.setPolicy("support-bot", ["weather"]);
-      await cp.setPolicy("exec-assistant", ["weather", "calendar"]);
+      for (const [principal, skills] of Object.entries(SEED_POLICIES)) {
+        await cp.setPolicy(principal, skills);
+      }
       await refresh();
-      return { ok: true, message: "seeded weather + calendar with default policies" };
+      return { ok: true, message: "seeded weather + calendar with role policies" };
     },
   });
 
@@ -166,14 +168,12 @@ export function CopilotActions() {
   useCopilotAction({
     name: "register_tool",
     description:
-      "Register a tool with OpenMirror: mint controller (~36s), register skill, grant to exec-assistant",
+      "Register a tool: mint controller (~36s) and grant to role owner(s) per workers map",
     parameters: [
       { name: "tool_name", type: "string", required: true },
     ],
     handler: async ({ tool_name }) => {
-      const r = await ag.registerTool(tool_name, {
-        "exec-assistant": [tool_name],
-      });
+      const r = await ag.registerTool(tool_name, grantsForSkill(tool_name));
       await refresh();
       return r;
     },
@@ -182,12 +182,13 @@ export function CopilotActions() {
   useCopilotAction({
     name: "run_orchestrator",
     description:
-      "Run the multi-agent orchestrator on a task. Delegates to exec-assistant and support-bot with differential governance.",
+      "Run the orchestrator on a task. Delegates to research-agent, ops-agent, or support-agent by sub-task.",
     parameters: [
       { name: "task", type: "string", required: true },
+      { name: "chat_id", type: "string", required: false },
     ],
-    handler: async ({ task }) => {
-      const r = await ag.run(task);
+    handler: async ({ task, chat_id }) => {
+      const r = await ag.run(task, { chat_id: chat_id || undefined });
       await refresh();
       return r;
     },

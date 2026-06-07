@@ -1,40 +1,42 @@
 """Track D: multi-agent orchestrator.
 
-A planner ("orchestrator" principal) decomposes a user task and delegates each
-sub-task to one of the governed worker agents. The orchestrator itself has no
-tools and runs no governed session -- its only privilege is *deciding who to
-ask*. Workers act under their own OpenMirror policies, so the same sub-task
-delegated to two different workers will succeed or be blocked based on each
-worker's authorized capabilities.
+A planner decomposes a user task and delegates each sub-task to one of the
+governed worker agents. The orchestrator itself has no tools and runs no
+governed session -- its only privilege is *deciding who to ask*. Workers act
+under their own OpenMirror policies, so the same sub-task delegated to two
+different workers will succeed or be blocked based on each worker's authorized
+capabilities.
 
-Default worker roster (set up by ``ensure_workers_seeded`` so the demo starts
-from a known state):
+Default worker roster (see ``agents.workers``):
 
-    exec-assistant -> all minted tool skills        (broad)
-    support-bot    -> [weather] only                (restricted)
-
-Why three agents (orchestrator + two workers): two workers with *different*
-grants are the minimum to demonstrate differential governance; a third agent
-that *delegates* makes "shared governance authority" concrete. Beyond three,
-the demo gets noisy.
+    research-agent -> web / docs lookup
+    ops-agent      -> code / compute / workspace
+    support-agent  -> weather only (narrow; calendar blocked for contrast)
 """
 from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from control_plane.trace import attributes, op
 
-from . import cp, loop, tools
+from . import cp, loop
 from .brain import Brain, get_brain
+from .workers import (
+    WorkerSpec,
+    default_policy_for,
+    default_workers,
+    merge_policy,
+)
 
 _OBS_MAX = int(os.environ.get("OPENMIRROR_OBS_MAX_CHARS", "600"))
 
+Worker = WorkerSpec
+
 
 def _clip(text: str, limit: int | None = None) -> str:
-    """Keep brain/orchestrator context bounded — tool output can be 4000+ chars."""
     limit = limit if limit is not None else _OBS_MAX
     one_line = " ".join(str(text).split())
     if len(one_line) <= limit:
@@ -52,6 +54,11 @@ needed tool, the run will be BLOCKED -- choose wisely):
 
 {worker_doc}
 
+Routing hints:
+- Web lookup, facts, news, documents -> research-agent
+- Python, calculator, files, data/code execution -> ops-agent
+- Weather only -> support-agent (support-agent CANNOT use calendar or python)
+
 Task: {task}
 
 Protocol -- respond with EXACTLY ONE of:
@@ -62,36 +69,28 @@ Protocol -- respond with EXACTLY ONE of:
 
 Rules:
 - Issue one DELEGATE per turn. Wait for the result before the next step.
-- If a delegation comes back BLOCKED, retry with a different worker or finish.
-- Stop with FINAL once you have enough information. Do not loop.
+- If a delegation comes back BLOCKED, you MUST DELEGATE the same sub-task to a
+  different worker before FINAL. Do not give up after one BLOCKED.
+- Do not FINAL until every sub-task either succeeded or you exhausted workers.
+- Stop with FINAL once you have enough information. Do not loop endlessly.
 """
 
 
 _DELEGATE_RE = re.compile(
     r"^DELEGATE:\s*([A-Za-z_][\w\-]*)\s*\|\s*(.+?)\s*$", re.MULTILINE
 )
-# FINAL is terminal: capture the whole answer (greedy, multi-line) so a
-# code block or multi-paragraph final isn't truncated to its first line.
 _FINAL_RE = re.compile(r"^FINAL:\s*(.+)\Z", re.MULTILINE | re.DOTALL)
 _THOUGHT_RE = re.compile(r"^THOUGHT:\s*(.+?)$", re.MULTILINE)
 
 
-@dataclass
-class Worker:
-    name: str               # the OpenMirror principal
-    description: str        # human-readable note for the orchestrator
-    # Skills the worker REQUESTS when opening a session. The control plane
-    # filters this against the principal's policy; only authorized ones become
-    # the live capability set.
-    requested_skills: list[str]
-
-
-def _worker_doc(workers: list[Worker], snapshot: dict) -> str:
+def _worker_doc(workers: list[WorkerSpec], snapshot: dict) -> str:
     policies = snapshot.get("policies", {})
     lines = []
     for w in workers:
         allowed = policies.get(w.name, [])
-        lines.append(f"- {w.name}: {w.description} | authorized tools: {allowed or '(none yet)'}")
+        lines.append(
+            f"- {w.name}: {w.description} | authorized tools: {allowed or '(none yet)'}"
+        )
     return "\n".join(lines) if lines else "(no workers)"
 
 
@@ -103,8 +102,12 @@ class Delegation:
     result: Optional[loop.RunResult] = None
     note: str = ""
 
+    def had_blocked(self) -> bool:
+        if self.result is None:
+            return False
+        return any(s.blocked for s in self.result.steps)
+
     def summarize(self) -> str:
-        """Brain-facing one-paragraph summary of a delegation outcome."""
         if self.note and self.result is None:
             return f"DELEGATION ERROR ({self.worker}): {self.note}"
         r = self.result
@@ -124,6 +127,11 @@ class Delegation:
             f"  tools used (allowed): {allowed}  blocked: {blocked}",
             f"  final: {_clip(r.final_answer or '(no FINAL emitted)', 800)}",
         ]
+        if blocked and not allowed:
+            summary.append(
+                "  GOVERNANCE: this worker was BLOCKED. Retry the same sub-task "
+                "with a different worker (research-agent, ops-agent, or support-agent)."
+            )
         if obs_lines:
             summary.append("  observations:")
             summary.extend(obs_lines)
@@ -155,59 +163,43 @@ class OrchestratorResult:
         }
 
 
-# --- worker seeding -------------------------------------------------------
-
-
-def default_workers() -> list[Worker]:
-    """Two-worker roster matching the existing seed: one broad, one restricted."""
-    return [
-        Worker(
-            name="exec-assistant",
-            description="broadly-capable assistant",
-            requested_skills=["weather", "calendar", "web_search"],
-        ),
-        Worker(
-            name="support-bot",
-            description="customer support, weather-only by policy",
-            requested_skills=["weather", "calendar", "web_search"],
-        ),
-    ]
+def _pending_blocked(delegations: list[Delegation]) -> bool:
+    if not delegations:
+        return False
+    return delegations[-1].had_blocked()
 
 
 @op(name="orch.ensure_workers_seeded")
-def ensure_workers_seeded(workers: list[Worker] | None = None) -> dict:
-    """Make sure each worker has a policy in the control plane.
-
-    Idempotent: if a policy already exists for a principal it's left as-is.
-    Skills that aren't yet registered are skipped silently -- the registry
-    endpoint (or the dashboard seed) is the right place to mint them.
-    """
+def ensure_workers_seeded(workers: list[WorkerSpec] | None = None, *,
+                          reset_policies: bool = False) -> dict:
+    """Ensure each orchestrator worker has an appropriate policy."""
     workers = workers or default_workers()
     snap = cp.state()
-    available_skills = set(snap.get("skills", {}).keys())
+    available = set(snap.get("skills", {}).keys())
     policies = snap.get("policies", {})
     roster = []
     for w in workers:
-        if w.name in policies:
-            roster.append({"worker": w.name, "policy": policies[w.name], "minted": False})
-            continue
-        # Default grants: support-bot -> [weather] only; everyone else -> all known
-        grants = ["weather"] if w.name == "support-bot" else sorted(available_skills)
-        grants = [g for g in grants if g in available_skills]
+        current = set(policies.get(w.name, []))
+        if reset_policies:
+            grants_set = default_policy_for(w.name, available)
+        elif w.name not in policies:
+            grants_set = default_policy_for(w.name, available)
+        else:
+            grants_set = merge_policy(w.name, current, available)
+        grants = sorted(grants_set)
         if not grants:
             roster.append({"worker": w.name, "policy": [], "minted": False,
                            "note": "no skills minted yet"})
             continue
-        cp.set_policy(w.name, grants)
-        roster.append({"worker": w.name, "policy": grants, "minted": True})
+        if grants != sorted(current):
+            cp.set_policy(w.name, grants)
+            roster.append({"worker": w.name, "policy": grants, "minted": True})
+        else:
+            roster.append({"worker": w.name, "policy": grants, "minted": False})
     return {"workers": roster}
 
 
-# --- orchestrator loop ----------------------------------------------------
-
-
 def _parse_orchestrator(text: str) -> tuple[str, Optional[tuple[str, str]], Optional[str]]:
-    """Return (thought, (worker, subtask) | None, final | None)."""
     thought_m = _THOUGHT_RE.search(text)
     thought = thought_m.group(1).strip() if thought_m else ""
     final_m = _FINAL_RE.search(text)
@@ -220,11 +212,10 @@ def _parse_orchestrator(text: str) -> tuple[str, Optional[tuple[str, str]], Opti
 
 
 @op(name="orch.delegate")
-def _delegate(worker: Worker, subtask: str, *, max_steps: int,
+def _delegate(worker: WorkerSpec, subtask: str, *, max_steps: int,
               max_new_tokens: int, brain: Brain,
               user_id: str | None = None,
               session_key: str | None = None) -> Delegation:
-    """Run one worker on one sub-task; tolerate worker errors."""
     d = Delegation(worker=worker.name, subtask=subtask)
     try:
         d.result = loop.run(
@@ -244,7 +235,7 @@ def _delegate(worker: Worker, subtask: str, *, max_steps: int,
 
 @op(name="orch.run")
 def run(task: str, *,
-        workers: list[Worker] | None = None,
+        workers: list[WorkerSpec] | None = None,
         max_delegations: int = 6,
         worker_max_steps: int = 6,
         worker_max_new_tokens: int = 32,
@@ -252,23 +243,21 @@ def run(task: str, *,
         ensure_seeded: bool = True,
         user_id: str | None = None,
         chat_id: str | None = None,
-        history: list[dict] | None = None) -> OrchestratorResult:
+        history: list[dict] | None = None,
+        force_worker: str | None = None) -> OrchestratorResult:
     """Run the orchestrator end-to-end on a task."""
     workers = workers or default_workers()
+    force_worker = force_worker or os.environ.get("OPENMIRROR_FORCE_WORKER", "").strip() or None
     if ensure_seeded:
         ensure_workers_seeded(workers)
 
     brain = brain or get_brain()
     snap = cp.state()
-    # Workers request EVERY registered skill; the control plane authorizes only
-    # those in each worker's policy. This makes a newly registered + granted
-    # tool usable immediately, without editing the static worker roster. The
-    # restricted worker (support-bot) still gets only its policy's skills.
     available = sorted(snap.get("skills", {}).keys())
-    policies = snap.get("policies", {})
     if available:
         for w in workers:
             w.requested_skills = available
+
     sys_msg = ORCH_SYSTEM.format(worker_doc=_worker_doc(workers, snap), task=task)
     messages: list[dict] = [{"role": "system", "content": sys_msg}]
     for turn in history or []:
@@ -283,24 +272,38 @@ def run(task: str, *,
     stopped_reason = "max_delegations"
     final_answer: Optional[str] = None
 
-    # Tag the whole orchestration (and every nested worker/brain/tool op) with the
-    # task + roster so the Weave trace tree is filterable.
     with attributes({"task": task, "workers": sorted(by_name),
                      "available_skills": available}):
         for _ in range(max_delegations):
-            raw = brain.chat(messages)
-            thought, action, final = _parse_orchestrator(raw)
-            if final is not None:
-                final_answer = final
-                stopped_reason = "final"
-                break
-            if action is None:
-                d = Delegation(worker="(planner)", subtask="",
-                               note="planner returned no DELEGATE or FINAL; expected "
-                                    "'DELEGATE: <worker> | <sub-task>' or 'FINAL: ...'")
-                delegations.append(d)
-                break
-            worker_name, subtask = action
+            if force_worker and not delegations:
+                worker_name, subtask = force_worker, task
+                thought = f"forced worker {force_worker!r}"
+                raw = f"DELEGATE: {worker_name} | {subtask}"
+            else:
+                raw = brain.chat(messages)
+                thought, action, final = _parse_orchestrator(raw)
+                if final is not None:
+                    if _pending_blocked(delegations):
+                        messages.append({"role": "assistant", "content": raw.strip()})
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "You may not FINAL yet: the last delegation was BLOCKED. "
+                                "DELEGATE the same sub-task to a different worker first."
+                            ),
+                        })
+                        continue
+                    final_answer = final
+                    stopped_reason = "final"
+                    break
+                if action is None:
+                    d = Delegation(worker="(planner)", subtask="",
+                                   note="planner returned no DELEGATE or FINAL")
+                    delegations.append(d)
+                    stopped_reason = "parse_error"
+                    break
+                worker_name, subtask = action
+
             if worker_name not in by_name:
                 d = Delegation(worker=worker_name, subtask=subtask, thought=thought,
                                note=f"unknown worker {worker_name!r}; "
@@ -309,7 +312,7 @@ def run(task: str, *,
                 messages.append({"role": "assistant", "content": raw.strip()})
                 messages.append({"role": "user", "content": d.summarize()})
                 continue
-            # A worker with an empty policy still runs — bootstrap session + REQUEST.
+
             d = _delegate(by_name[worker_name], subtask,
                           max_steps=worker_max_steps,
                           max_new_tokens=worker_max_new_tokens,

@@ -42,7 +42,7 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · editable source: 
 | Service | Port | Role |
 |---------|------|------|
 | **Dashboard** | 3000 | Chat, agents, memory panel, policies, approvals, audit |
-| **Orchestrator** | 8200 | Multi-agent delegation + governed workers |
+| **Orchestrator** | 8200 | Planner + role workers (`research-agent`, `ops-agent`, `support-agent`) |
 | **Control plane** | 8100 | Policy, sessions, memory log, `/personalize`, runtime guard |
 | **NTK engine** | 8000 | Train / compose / act on frozen Qwen2.5-7B |
 | **Brain** | 8001 | Qwen2.5-14B via vLLM — reasoning only |
@@ -56,7 +56,9 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · editable source: 
 
 1. **Memory** — Chat with `user_id` → **Consolidate** → `user_style-{id}` minted; raw logs deleted.
 2. **Governance** — Revoke `weather` → governed model stops emitting it.
-3. **Both** — Orchestrator with `user_id` + tools → your style **and** governed capabilities.
+3. **Both** — Orchestrator with `user_id` + tools → style + governed capabilities across **role workers** (see `python verify_orchestrator.py`).
+
+**Multi-agent verification:** `python verify_orchestrator.py` (offline stub) or `--live` against `:8200`.
 
 ---
 

@@ -46,8 +46,8 @@ export REPO_URL=https://github.com/Jiyungi/weave-hack.git
 export BRANCH=unified
 export VENV=$HOME/venv
 
-# From anywhere — clones ~/weave-hack if missing:
-curl -fsSL "$REPO_URL/raw/$BRANCH/setup_brev.sh" -o /tmp/setup_brev.sh
+# Raw GitHub URLs must NOT include .git (use repo path only):
+curl -fsSL "https://github.com/Jiyungi/weave-hack/raw/${BRANCH}/setup_brev.sh" -o /tmp/setup_brev.sh
 bash /tmp/setup_brev.sh
 ```
 
@@ -132,11 +132,15 @@ Open **http://localhost:3000**
 
 ### Typical demo flow
 
-1. **Capabilities** — **Seed demo (weather + calendar)** or register tools (~36 s mint each).
-2. **Chat** — set **User ID** (e.g. `alice`), ask a question; orchestrator delegates to `exec-assistant`.
-3. **Capability requests** — approve/deny when agents REQUEST new skills.
-4. **Revoke** — session revoke (this chat only) vs policy revoke (all future sessions).
-5. **Memory** — log turns → **Consolidate → mint style** for `user_style-{user}`.
+1. **Capabilities** — **Seed demo (weather + calendar)** sets role policies; register extra tools (~36 s each).
+2. **Chat** — set **User ID** (e.g. `alice`); orchestrator routes sub-tasks to **research-agent** (lookup), **ops-agent** (code), or **support-agent** (weather).
+3. **Multi-agent demo prompt:** *"Weather in Berlin and compute 15% tip on $84 with python"* — expect **≥2 workers** in the delegation tree; expand details for BLOCKED vs ALLOWED.
+4. **Verify:** `python verify_orchestrator.py` on the box (offline stub; `--live` for full stack).
+5. **Capability requests** — approve/deny when agents REQUEST new skills.
+6. **Revoke** — session revoke (this chat only) vs policy revoke (all future sessions).
+7. **Memory** — log turns → **Consolidate → mint style** for `user_style-{user}`.
+
+**Legacy principals:** `exec-assistant` / `support-bot` remain for `verify_control_plane.py` only. Migrate Redis policies with `python scripts/migrate_worker_policies.py --dry-run`.
 
 ---
 

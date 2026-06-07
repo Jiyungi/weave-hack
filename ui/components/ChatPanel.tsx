@@ -13,7 +13,7 @@ import {
 } from "@/lib/chat-storage";
 import { useDashboard } from "@/lib/dashboard-context";
 import { Btn, Card, Input, Pill, Textarea } from "./ui";
-import { DelegationCard } from "./DelegationTree";
+import { DelegationCard, delegationSummaryLine } from "./DelegationTree";
 
 function emptyThread(): ChatThread {
   const now = Date.now();
@@ -41,7 +41,8 @@ function AssistantBody({
         <details className="mt-2 rounded-lg border border-line/80 bg-panel/50">
           <summary className="cursor-pointer px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted">
             {result.delegations.length} delegation
-            {result.delegations.length === 1 ? "" : "s"} · {result.stopped_reason}
+            {result.delegations.length === 1 ? "" : "s"} ·{" "}
+            {delegationSummaryLine(result.delegations)} · {result.stopped_reason}
           </summary>
           <div className="border-t border-line px-2 pb-2">
             {result.delegations.map((d, i) => (

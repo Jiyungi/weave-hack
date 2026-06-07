@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ag, cp } from "@/lib/api";
 import { useDashboard } from "@/lib/dashboard-context";
+import { grantsForSkill, SEED_POLICIES } from "@/lib/workers";
 import { Btn, Card, Pill, Status } from "./ui";
 
 export function CapabilitiesPanel() {
@@ -20,11 +21,12 @@ export function CapabilitiesPanel() {
     try {
       for (const skill of ["weather", "calendar"] as const) {
         setStatus(`minting ${skill}… (~36s, teacher-synthesized examples)`);
-        await ag.registerTool(skill);
+        await ag.registerTool(skill, grantsForSkill(skill));
       }
-      setStatus("setting policies…");
-      await cp.setPolicy("support-bot", ["weather"]);
-      await cp.setPolicy("exec-assistant", ["weather", "calendar"]);
+      setStatus("setting role policies…");
+      for (const [principal, skills] of Object.entries(SEED_POLICIES)) {
+        await cp.setPolicy(principal, skills);
+      }
       setStatus("seeded.");
       await refresh();
     } catch (e) {
@@ -39,7 +41,7 @@ export function CapabilitiesPanel() {
     setBusyTool(name);
     setStatus(`minting controller for ${name}… (~36s, please wait)`);
     try {
-      await ag.registerTool(name, { "exec-assistant": [name] });
+      await ag.registerTool(name, grantsForSkill(name));
       setStatus(`registered ${name}`);
       await refresh();
     } catch (e) {

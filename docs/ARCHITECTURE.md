@@ -7,7 +7,7 @@ Source diagram: [`architecture.svg`](architecture.svg) (export to PNG for README
 | Service | Port | Package | Role |
 |---------|------|---------|------|
 | **Dashboard** | 3000 | `ui/` | Next.js UI: agents, memory panel, capabilities, approvals, audit. CopilotKit sidebar is optional chat chrome. |
-| **Orchestrator** | 8200 | `agents/` + `agent_service.py` | Decomposes tasks, runs governed worker loops, optional `user_id` for style compose + interaction logging. |
+| **Orchestrator** | 8200 | `agents/` + `agent_service.py` | Planner delegates to **research-agent**, **ops-agent**, **support-agent** (separate policies). |
 | **Control plane** | 8100 | `control_plane/` | Policy, sessions, grant/revoke/compose, runtime guard, `/personalize`, `/memory/*`, audit. |
 | **NTK engine** | 8000 | `engine/` + `controller_service.py` | NTK-Mirror train / compose / subtract / act on **frozen Qwen2.5-7B-Instruct**. |
 | **Brain** | 8001 | vLLM | **Qwen2.5-14B-Instruct** — planning and reasoning for the orchestrator only; not the governed actuator. |

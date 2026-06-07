@@ -1,6 +1,19 @@
 import { Delegation, AgentStep } from "@/lib/api";
 import { Pill } from "./ui";
 
+/** One-line summary for chat collapsed delegation header. */
+export function delegationSummaryLine(delegations: Delegation[]): string {
+  const parts = delegations.map((d) => {
+    if (!d.result) return `${d.worker} error`;
+    const blocked = d.result.steps.some((s) => s.blocked?.length);
+    const allowed = d.result.steps.some((s) => s.allowed?.length);
+    if (blocked && !allowed) return `${d.worker} BLOCKED`;
+    if (allowed) return `${d.worker} ok`;
+    return d.worker;
+  });
+  return parts.join(" · ");
+}
+
 function StepLine({ s }: { s: AgentStep }) {
   if (s.final) {
     return (

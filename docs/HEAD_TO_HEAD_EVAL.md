@@ -254,6 +254,21 @@ Copy for each scenario × system:
 | 5 New capability | | | |
 | 6 Sensitive write | | | |
 | 7 Strict approval | | | |
+| 8 Multi-worker delegation | | | |
+
+### Scenario 8 — Multi-worker delegation (OpenMirror)
+
+**Prompt (exact):**
+
+> Weather in Berlin and compute 15% tip on $84 with python.
+
+**Pass criteria:**
+
+- Chat delegation tree shows **≥2 different workers** (`support-agent`, `ops-agent`, and/or `research-agent`).
+- At least one step shows **BLOCKED** on the wrong worker; planner retries another worker.
+- `python verify_orchestrator.py` passes offline; optional `--live` on `:8200`.
+
+**Artifacts:** expand chat delegations summary; audit `open_session` / `act_gate` for multiple principals.
 
 ---
 

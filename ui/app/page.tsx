@@ -6,6 +6,7 @@ import { CopilotActions } from "@/lib/copilot-actions";
 import { HealthBar } from "@/components/HealthBar";
 import { AutoApproveToggle } from "@/components/AutoApproveToggle";
 import { CapabilitiesPanel } from "@/components/CapabilitiesPanel";
+import { AgentsRosterPanel } from "@/components/AgentsRosterPanel";
 import { ExternalToolPanel } from "@/components/ExternalToolPanel";
 import { SessionPanel } from "@/components/SessionPanel";
 import { RevokePanel } from "@/components/RevokePanel";
@@ -47,6 +48,7 @@ export default function Home() {
         {/* Provision (what can be done + by whom) and Observe (what happened) */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <div className="flex flex-col gap-5">
+            <AgentsRosterPanel />
             <CapabilitiesPanel />
             <ExternalToolPanel />
           </div>

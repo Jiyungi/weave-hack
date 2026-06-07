@@ -9,5 +9,6 @@ Layout:
     brain.py         OpenAI-compatible client (vLLM local by default)
     tools.py         Real no-key tools (+ optional key tools) + registry
     loop.py          Governed ReAct loop (one agent, one principal)
-    orchestrator.py  Planner that delegates to multiple governed worker agents
+    orchestrator.py  Planner → research-agent / ops-agent / support-agent
+    workers.py       Role roster + default skill grants
 """

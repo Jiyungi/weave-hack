@@ -58,8 +58,8 @@ python -m scripts.mint_tools
 ## Live verification (in the UI at http://localhost:3000)
 
 Open the Agents/chat panel and try prompts that should trigger the new skills.
-The control plane already grants every minted skill to `exec-assistant`, so the
-orchestrator can use them immediately — no roster edit needed.
+Mint grants go to **role owners** (`research-agent`, `ops-agent`, `support-agent`)
+via `agents/workers.py` — the orchestrator picks the worker by sub-task.
 
 - "What's 250 USD in EUR?"            → `currency`
 - "Convert 10 km to miles."           → `unit_convert`
