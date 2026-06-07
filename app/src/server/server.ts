@@ -13,6 +13,7 @@ import { createCopilotKitNodeHandler } from "./copilotkit-runtime.js";
  */
 const PORT = Number(process.env.FRONTEND_PORT ?? process.env.PORT ?? 3000);
 const INFERENCE_API_URL = process.env.INFERENCE_API_URL ?? "http://127.0.0.1:8000";
+const REDIS_URL = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
 const ENDPOINT = "/api/copilotkit";
 
 const app = express();
@@ -35,6 +36,7 @@ app.use((req, res, next) => {
 
 const copilotHandler = createCopilotKitNodeHandler({
   inferenceApiUrl: INFERENCE_API_URL,
+  redisUrl: REDIS_URL,
   endpoint: ENDPOINT,
 });
 

@@ -12,7 +12,7 @@ const RUNTIME_ENDPOINT = "/api/copilotkit";
  * imported lazily so test/config loads stay light. For production use the
  * standalone Express host (`npm run server`).
  */
-function copilotKitRuntimePlugin(inferenceApiUrl: string): Plugin {
+function copilotKitRuntimePlugin(inferenceApiUrl: string, redisUrl: string | undefined): Plugin {
   return {
     name: "weaveself-copilotkit-runtime",
     apply: "serve",
@@ -22,6 +22,7 @@ function copilotKitRuntimePlugin(inferenceApiUrl: string): Plugin {
       );
       const handler = createCopilotKitNodeHandler({
         inferenceApiUrl,
+        redisUrl,
         endpoint: RUNTIME_ENDPOINT,
       });
 
@@ -42,10 +43,11 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, envDir, "");
   const inferenceApiUrl =
     env.INFERENCE_API_URL ?? env.VITE_INFERENCE_API_URL ?? "http://127.0.0.1:8000";
+  const redisUrl = env.REDIS_URL ?? "redis://127.0.0.1:6379";
 
   return {
     envDir,
-    plugins: [react(), copilotKitRuntimePlugin(inferenceApiUrl)],
+    plugins: [react(), copilotKitRuntimePlugin(inferenceApiUrl, redisUrl)],
     server: {
       port: Number(env.FRONTEND_PORT ?? 3000),
     },
