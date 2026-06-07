@@ -129,13 +129,13 @@ start_session() {
 vllm serve $BRAIN_MODEL --port $BRAIN_PORT \
   --max-model-len 8192 --gpu-memory-utilization $BRAIN_GPU_UTIL" C-m
 
-  local wait_brain="for i in \$(seq 1 150); do curl -sf http://127.0.0.1:${BRAIN_PORT}/health >/dev/null && break; sleep 2; done"
   local wait_cp="for i in \$(seq 1 60); do curl -sf http://127.0.0.1:8100/health >/dev/null && break; sleep 2; done"
 
+  # Track A (NTK-Mirror engine) loads its own 7B via transformers; it does NOT
+  # depend on the vLLM brain (:8001), so start it immediately.
   tmux new-window -t "$SESSION" -n track-a
   tmux send-keys -t "$SESSION:track-a" \
-    "$act && $repo_cd && echo '[track-a] waiting for brain :${BRAIN_PORT}...' && $wait_brain && \
-uvicorn controller_service:app --host 0.0.0.0 --port 8000" C-m
+    "$act && $repo_cd && uvicorn controller_service:app --host 0.0.0.0 --port 8000" C-m
 
   tmux new-window -t "$SESSION" -n track-b
   tmux send-keys -t "$SESSION:track-b" \
@@ -156,7 +156,8 @@ uvicorn agent_service:app --host 0.0.0.0 --port 8200" C-m
   echo ""
   echo "started tmux session '$SESSION' with 5 windows: brain track-a track-b track-d ui"
   echo ""
-  echo "  brain loads first (~1–2 min). track-a waits for :$BRAIN_PORT; track-d waits for :8100."
+  echo "  brain (vLLM) is OPTIONAL — only chat + Track D live reasoning need it."
+  echo "  track-a + track-b are the governance demo and start on their own; track-d waits for :8100."
   echo "  attach:       bash start_all.sh attach   (detach: Ctrl-b d)"
   echo "  status:       bash start_all.sh status"
   echo "  on laptop:    brev port-forward <instance> --port 3000:3000"
