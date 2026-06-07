@@ -65,14 +65,23 @@ def train_adapter_nkt(
     max_len: int = 192,
     weight_decay: float = 0.0,
     identity_reg: float = 0.1,
+    init_gates: dict | None = None,
+    anchor_gates: dict | None = None,
     verbose: bool = True,
 ) -> str:
     """Train real NKT-Mirror gates on ``dataset_path`` and write an Adapter_File.
 
+    Continual learning (data-free): pass ``init_gates`` to **warm-start** from a
+    previous adapter's gates (so the model continues from what it already knew),
+    and ``anchor_gates`` to **regularize toward those gates** instead of toward
+    identity — that preserves prior days in the weights without replaying old
+    data. Both are dicts keyed ``model.layers.{i}.mlp.gate`` (the Adapter_File
+    layout). When neither is given, training starts at identity and regularizes
+    toward identity (single-shot behavior).
+
     Returns the ``.safetensors`` adapter path. Raises
     :class:`~weaveself.training.errors.DatasetNotReadable` /
-    :class:`~weaveself.training.errors.InsufficientTrainingData` on bad input
-    (no Adapter_File is written in those cases).
+    :class:`~weaveself.training.errors.InsufficientTrainingData` on bad input.
     """
     from weaveself.training.errors import (
         DatasetNotReadable,
@@ -124,11 +133,30 @@ def train_adapter_nkt(
     hidden = int(model.config.hidden_size)
     gate_layers = _select_gate_layers(num_layers, n_gate_layers)
 
-    # Learnable gate parameters, initialized at 1.0 (identity = pure base).
+    def _gate_key(i: int) -> str:
+        return f"model.layers.{i}.mlp.gate"
+
+    def _init_tensor(i: int) -> "torch.Tensor":
+        # Warm-start from a prior adapter's gate when shapes match, else identity.
+        if init_gates is not None:
+            arr = init_gates.get(_gate_key(i))
+            if arr is not None and np.asarray(arr).shape == (hidden,):
+                return torch.tensor(np.asarray(arr), device=device, dtype=torch.float32)
+        return torch.ones(hidden, device=device, dtype=torch.float32)
+
+    # Learnable gate parameters (warm-started from prior gates when provided).
     gates: dict[int, torch.nn.Parameter] = {
-        i: torch.nn.Parameter(torch.ones(hidden, device=device, dtype=torch.float32))
-        for i in gate_layers
+        i: torch.nn.Parameter(_init_tensor(i)) for i in gate_layers
     }
+
+    # Anchor tensors the regularizer pulls toward: prior gates (continual
+    # learning) when provided, else identity 1.0 (single-shot "steer").
+    anchors: dict[int, "torch.Tensor"] = {}
+    for i in gate_layers:
+        if anchor_gates is not None and anchor_gates.get(_gate_key(i)) is not None and np.asarray(anchor_gates[_gate_key(i)]).shape == (hidden,):
+            anchors[i] = torch.tensor(np.asarray(anchor_gates[_gate_key(i)]), device=device, dtype=torch.float32)
+        else:
+            anchors[i] = torch.ones(hidden, device=device, dtype=torch.float32)
 
     handles = []
 
@@ -172,12 +200,12 @@ def train_adapter_nkt(
             lbl = labels.unsqueeze(0).to(device)
             out = model(input_ids=ids, labels=lbl)
             loss = out.loss
-            # Identity regularizer keeps gates near 1.0 ("steer, don't teach"),
-            # which prevents the gates from overfitting a few rows and hurting
-            # held-out perplexity.
+            # Anchor regularizer: pull gates toward the anchor (prior gates for
+            # continual learning, else identity). Preserves past learning and
+            # prevents overfitting the day's few rows.
             if identity_reg > 0.0:
                 penalty = identity_reg * sum(
-                    ((g - 1.0) ** 2).mean() for g in gates.values()
+                    ((gates[i] - anchors[i]) ** 2).mean() for i in gate_layers
                 )
                 loss = loss + penalty
             loss.backward()

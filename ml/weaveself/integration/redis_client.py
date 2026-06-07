@@ -153,6 +153,9 @@ class KvBackend:
     def lrange(self, key: str, start: int, stop: int) -> list[str]:  # pragma: no cover
         raise NotImplementedError
 
+    def delete(self, key: str) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
 
 class InMemoryKvBackend(KvBackend):
     """Process-local key/value backend (no persistence)."""
@@ -175,6 +178,10 @@ class InMemoryKvBackend(KvBackend):
         if stop == -1:
             return list(values[start:])
         return list(values[start : stop + 1])
+
+    def delete(self, key: str) -> None:
+        self._strings.pop(key, None)
+        self._lists.pop(key, None)
 
 
 class FileKvBackend(KvBackend):
@@ -225,6 +232,13 @@ class FileKvBackend(KvBackend):
             return list(values[start:])
         return list(values[start : stop + 1])
 
+    def delete(self, key: str) -> None:
+        with self._lock:
+            data = self._read()
+            data.get("strings", {}).pop(key, None)
+            data.get("lists", {}).pop(key, None)
+            self._write(data)
+
 
 class RedisKvBackend(KvBackend):
     """Live-Redis backend wrapping a ``redis.Redis`` client.
@@ -256,6 +270,9 @@ class RedisKvBackend(KvBackend):
     def lrange(self, key: str, start: int, stop: int) -> list[str]:
         raw = self._client.lrange(key, start, stop)  # type: ignore[attr-defined]
         return [self._to_str(v) or "" for v in raw]
+
+    def delete(self, key: str) -> None:
+        self._client.delete(key)  # type: ignore[attr-defined]
 
 
 # --- Redis_Client_API ------------------------------------------------------
@@ -384,6 +401,15 @@ class RedisClientApi:
     def read_interactions(self, unit_label: str) -> list[dict]:
         values = self._backend.lrange(interactions_key(unit_label), 0, -1)
         return [json.loads(v) for v in values]
+
+    def clear_interactions(self, unit_label: str) -> None:
+        """Delete a Unit's raw interactions after they've been consolidated.
+
+        Core to the weight-memory thesis: once the day's chats are baked into the
+        adapter, the raw logs are deleted — memory lives in the weights, not in
+        stored text.
+        """
+        self._backend.delete(interactions_key(unit_label))
 
     # -- consolidation state: cumulative corpus, versioning, current pointer --
 

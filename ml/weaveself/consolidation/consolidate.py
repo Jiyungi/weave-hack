@@ -1,37 +1,39 @@
-"""The nightly consolidation pipeline for one Unit.
+"""Data-free nightly consolidation for one Unit ("sleep").
 
-Pipeline (collect -> curate -> train -> eval-gate -> promote/reject):
+Core principle (the weight-memory thesis): **memory lives in the adapter, not in
+stored chat logs.** Each night we take only the *new* day's interactions, train
+the Unit's adapter by **warm-starting from yesterday's gates and anchoring to
+them** (so prior days survive in the weights without replaying old text), gate
+the result, then **delete the day's raw interactions**. No cumulative corpus is
+kept.
 
-1. **collect**   — read the Unit's accumulated raw interactions from Redis
-   (``interactions:<unit>``).
-2. **curate**    — turn raw interactions into clean Training_Pairs via the
-   GPT_Curation_Node (OpenAI when configured, else a local curator). Tracks
-   yield (emitted / discarded).
-3. **accumulate** — append today's pairs to the Unit's CUMULATIVE corpus
-   (``corpus:<unit>``) so training never forgets earlier days, then split into
-   train / held-out (today's slice + a prior slice).
-4. **train**     — train a new NKT-Mirror adapter version on the cumulative
-   train set (real gradient descent on per-channel gates; base frozen).
-5. **eval-gate** — score the held-out sets under the base, the previous promoted
-   adapter, and the new adapter, and compute:
-   * ``consolidation`` — perplexity drop on *today's* held-out (did we learn
-     today?),
-   * ``forgetting``    — perplexity change on *prior* held-out vs the previous
-     adapter (did we forget earlier days?),
-   * ``gate_deviation`` — mean |gate - 1| (how hard the adapter steers).
-   The new adapter is **promoted only if** it beats the incumbent on the full
-   held-out and does not regress prior-day held-out beyond a tolerance.
-6. **promote / reject** — on promote, store the versioned adapter + metadata in
-   Redis and point ``adapter:current:<unit>`` at it (serving picks it up); on
-   reject, discard the new adapter file so the incumbent keeps serving.
+Pipeline (collect -> curate -> train(warm-start+anchor) -> eval-gate ->
+promote/reject -> delete logs):
 
-The result object carries every metric so the caller can log it to Weave.
+1. **collect**   — read the day's raw interactions from Redis.
+2. **curate**    — OpenAI (resilient local fallback) -> clean Training_Pairs;
+   yield tracked. Split today's pairs into train / held-out.
+3. **train**     — train a new adapter version on TODAY's train pairs only,
+   warm-started from and anchored to the current adapter's gates.
+4. **eval-gate** — score today's held-out under base, the previous adapter, and
+   the new adapter; compute:
+   * ``consolidation`` — perplexity drop on today's held-out (did we learn?),
+   * ``gate_drift``    — mean |g_new - g_prev| (how far we moved from yesterday;
+     a data-free forgetting proxy — large drift risks overwriting the past),
+   * ``gate_deviation`` — mean |g_new - 1| (total steer from base).
+   Promote only if the new adapter beats the incumbent on today's held-out and
+   the drift stays within tolerance.
+5. **promote/reject** — on promote, store the versioned adapter + point
+   ``adapter:current:<unit>`` at it; on reject, discard it (incumbent keeps
+   serving).
+6. **delete logs** — the day's raw interactions are deleted regardless: they've
+   been consolidated into (or rejected by) the weights.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -47,33 +49,29 @@ from weaveself.data.curation import (
     ResilientCurator,
 )
 
-# A score callable mirrors the Inference_API /score: (prompt, target, adapter_id) -> perplexity.
 ScoreFn = Callable[[str, str, str | None], float]
 
 
 @dataclass
 class ConsolidationResult:
-    """All metrics + the decision from one Unit's consolidation run."""
-
     unit_label: str
     version: int
     promoted: bool
     decision_reason: str
-    # data engineering / curation
     raw_interactions: int = 0
     curated_new: int = 0
     discarded: int = 0
     curation_yield: float = 0.0
-    corpus_size: int = 0
     train_rows: int = 0
     heldout_rows: int = 0
-    # learning observability
     base_perplexity: float = float("nan")
     prev_perplexity: float = float("nan")
     new_perplexity: float = float("nan")
-    consolidation_score: float = float("nan")  # today: base_ppl - new_ppl (>0 = learned)
-    forgetting_score: float = float("nan")     # prior: new_ppl - incumbent_ppl (>0 = forgot)
-    gate_deviation: float = float("nan")
+    consolidation_score: float = float("nan")  # base_ppl - new_ppl on today's held-out
+    gate_drift: float = float("nan")           # mean |g_new - g_prev| (data-free forgetting proxy)
+    gate_deviation: float = float("nan")       # mean |g_new - 1|
+    warm_started: bool = False
+    logs_deleted: bool = False
     new_adapter_id: str | None = None
     previous_adapter_id: str | None = None
 
@@ -82,8 +80,6 @@ class ConsolidationResult:
 
 
 def _select_curator() -> Curator:
-    """Use OpenAI curation when a real key is configured (with a local fallback
-    if the API is unreachable), else a local curator."""
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if key.startswith("sk-") and "your_openai_key" not in key and "your-openai" not in key:
         model = os.environ.get("CURATION_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
@@ -91,25 +87,47 @@ def _select_curator() -> Curator:
     return HeuristicLocalCurator()
 
 
-def _mean_perplexity(
-    score_fn: ScoreFn, rows: Sequence[TrainingPair], adapter_id: str | None
-) -> float:
+def _mean_perplexity(score_fn: ScoreFn, rows: Sequence[TrainingPair], adapter_id: str | None) -> float:
     if not rows:
         return float("nan")
-    total = 0.0
-    for r in rows:
-        total += float(score_fn(r.prompt, r.completion, adapter_id))
-    return total / len(rows)
+    return sum(float(score_fn(r.prompt, r.completion, adapter_id)) for r in rows) / len(rows)
 
 
-def _gate_deviation(adapters_dir: Path, adapter_id: str) -> float:
-    """Mean |gate - 1| across the adapter's gate tensors (how hard it steers)."""
+def _load_gates(adapters_dir: Path, adapter_id: str, redis_client) -> dict | None:
+    """Load a prior adapter's gate tensors from disk, materializing from Redis
+    if the file isn't present locally."""
+    blob = adapters_dir / f"adapter_{adapter_id}.safetensors"
+    meta = adapters_dir / f"adapter_{adapter_id}.json"
+    if not blob.exists() or not meta.exists():
+        try:
+            import json as _json
+
+            m = redis_client.fetch_meta(adapter_id)
+            b = redis_client.fetch_blob(adapter_id)
+            adapters_dir.mkdir(parents=True, exist_ok=True)
+            blob.write_bytes(b)
+            meta.write_text(_json.dumps(m), encoding="utf-8")
+        except Exception:
+            return None
     try:
-        _meta, gates = read_adapter_file(adapters_dir, adapter_id)
+        _m, gates = read_adapter_file(adapters_dir, adapter_id)
+        return gates
     except Exception:
-        return float("nan")
-    devs = [float(np.abs(np.asarray(g) - 1.0).mean()) for g in gates.values()]
-    return float(np.mean(devs)) if devs else float("nan")
+        return None
+
+
+def _gate_drift(new_gates: dict, prev_gates: dict | None) -> tuple[float, float]:
+    """Return (deviation_from_identity, drift_from_prev) over shared gate keys."""
+    devs = [float(np.abs(np.asarray(g) - 1.0).mean()) for g in new_gates.values()]
+    deviation = float(np.mean(devs)) if devs else float("nan")
+    if not prev_gates:
+        return deviation, float("nan")
+    drifts = []
+    for k, g in new_gates.items():
+        if k in prev_gates and np.asarray(prev_gates[k]).shape == np.asarray(g).shape:
+            drifts.append(float(np.abs(np.asarray(g) - np.asarray(prev_gates[k])).mean()))
+    drift = float(np.mean(drifts)) if drifts else float("nan")
+    return deviation, drift
 
 
 def consolidate_unit(
@@ -121,34 +139,21 @@ def consolidate_unit(
     adapters_dir: str | Path,
     unit_type: str = "user",
     heldout_fraction: float = 0.25,
-    forgetting_tolerance: float = 0.05,
+    drift_tolerance: float = 0.5,
+    delete_logs: bool = True,
     curator: Curator | None = None,
 ) -> ConsolidationResult:
-    """Run one consolidation pass for ``unit_label``.
-
-    Args:
-        redis_client: a :class:`RedisClientApi` (live Redis).
-        engine_factory: builds a resident ServingEngine that can load the new +
-            previous adapters from ``adapters_dir`` (loads the base once). Called
-            once, after training, so scoring reuses a single resident model.
-        train_fn: ``train_fn(dataset_path, unit_label, unit_type, out_dir=, day_index=)``
-            -> adapter_path. The real NKT trainer.
-        adapters_dir: shared on-disk adapter directory the engine serves from.
-    """
+    """Run one data-free consolidation pass for ``unit_label``."""
     adapters_dir = Path(adapters_dir)
     adapters_dir.mkdir(parents=True, exist_ok=True)
     node = GPTCurationNode(curator or _select_curator())
 
-    # 1. collect
+    # 1. collect today's raw interactions
     raw = redis_client.read_interactions(unit_label)
 
-    # 2. curate today's raw interactions
+    # 2. curate -> clean pairs (today only)
     curation = node.curate_interactions(raw, unit_label)
-    new_pairs = [p.model_dump() for p in curation.pairs]
-
-    # 3. accumulate into the cumulative corpus (never forget earlier days)
-    prior_corpus = redis_client.get_corpus(unit_label)
-    corpus = prior_corpus + new_pairs
+    today_pairs = curation.pairs
     version = redis_client.next_version(unit_label)
     previous_adapter_id = redis_client.get_current_adapter(unit_label)
 
@@ -158,35 +163,32 @@ def consolidate_unit(
         promoted=False,
         decision_reason="",
         raw_interactions=len(raw),
-        curated_new=len(new_pairs),
+        curated_new=len(today_pairs),
         discarded=curation.discarded,
-        curation_yield=(len(new_pairs) / len(raw)) if raw else 0.0,
-        corpus_size=len(corpus),
+        curation_yield=(len(today_pairs) / len(raw)) if raw else 0.0,
         previous_adapter_id=previous_adapter_id,
     )
 
-    if len(corpus) < 2:
-        result.decision_reason = "insufficient corpus (need >= 2 curated pairs)"
-        redis_client.set_corpus(unit_label, corpus)
+    if len(today_pairs) < 2:
+        result.decision_reason = "insufficient new data (need >= 2 curated pairs)"
+        if delete_logs and raw:
+            redis_client.clear_interactions(unit_label)
+            result.logs_deleted = True
         return result
 
-    # deterministic split: hold out the last `heldout_fraction` of the corpus as
-    # the "prior" eval, and today's new pairs as the "today" eval.
-    n_held = max(1, int(round(len(corpus) * heldout_fraction)))
-    train_dicts = corpus[:-n_held] if len(corpus) > n_held else corpus
-    prior_held_dicts = corpus[-n_held:]
-    today_held_dicts = new_pairs[-max(1, int(round(len(new_pairs) * heldout_fraction))):] if new_pairs else []
+    # split TODAY's pairs into train / held-out (no overlap)
+    pairs = [p.model_dump() for p in today_pairs]
+    n_held = max(1, int(round(len(pairs) * heldout_fraction)))
+    train_dicts = pairs[:-n_held] if len(pairs) > n_held else pairs
+    held = [TrainingPair(**d) for d in pairs[-n_held:]]
+    result.train_rows = len(train_dicts)
+    result.heldout_rows = len(held)
 
-    def _to_pairs(ds: list[dict]) -> list[TrainingPair]:
-        return [TrainingPair(**d) for d in ds]
+    # warm-start + anchor from the current adapter's gates (continual learning)
+    prev_gates = _load_gates(adapters_dir, previous_adapter_id, redis_client) if previous_adapter_id else None
+    result.warm_started = prev_gates is not None
 
-    train_rows = _to_pairs(train_dicts)
-    prior_held = _to_pairs(prior_held_dicts)
-    today_held = _to_pairs(today_held_dicts)
-    result.train_rows = len(train_rows)
-    result.heldout_rows = len(prior_held)
-
-    # 4. train a new adapter version on the cumulative train set
+    # 3. train on TODAY's train pairs only, warm-started/anchored to prior gates
     train_path = adapters_dir / f"_train_{unit_label}_v{version}.jsonl"
     write_training_pairs(train_path, train_dicts)
     new_adapter_path = train_fn(
@@ -195,70 +197,55 @@ def consolidate_unit(
         unit_type,
         out_dir=str(adapters_dir),
         day_index=version,
+        init_gates=prev_gates,
+        anchor_gates=prev_gates,
     )
     new_adapter_id = Path(new_adapter_path).stem.removeprefix("adapter_")
     result.new_adapter_id = new_adapter_id
-    result.gate_deviation = _gate_deviation(adapters_dir, new_adapter_id)
 
-    # 5. eval-gate: score held-out under base / previous / new (single resident engine)
+    _m, new_gates = read_adapter_file(adapters_dir, new_adapter_id)
+    result.gate_deviation, result.gate_drift = _gate_drift(new_gates, prev_gates)
+
+    # 4. eval-gate on TODAY's held-out (no stored past data needed)
     engine = engine_factory()
 
     def score_fn(prompt: str, target: str, adapter_id: str | None) -> float:
         return float(engine.score(prompt, target, adapter_id).perplexity)
 
-    full_held = prior_held + today_held if today_held else prior_held
-    result.base_perplexity = _mean_perplexity(score_fn, full_held, None)
-    result.new_perplexity = _mean_perplexity(score_fn, full_held, new_adapter_id)
-
-    incumbent_ppl_today = result.base_perplexity
-    incumbent_ppl_prior = _mean_perplexity(score_fn, prior_held, None)
+    result.base_perplexity = _mean_perplexity(score_fn, held, None)
+    result.new_perplexity = _mean_perplexity(score_fn, held, new_adapter_id)
+    result.consolidation_score = result.base_perplexity - result.new_perplexity
+    incumbent_ppl = result.base_perplexity
     if previous_adapter_id is not None:
-        result.prev_perplexity = _mean_perplexity(score_fn, full_held, previous_adapter_id)
-        incumbent_ppl_today = result.prev_perplexity
-        incumbent_ppl_prior = _mean_perplexity(score_fn, prior_held, previous_adapter_id)
+        result.prev_perplexity = _mean_perplexity(score_fn, held, previous_adapter_id)
+        incumbent_ppl = result.prev_perplexity
 
-    # consolidation: did we learn today's data (lower perplexity than base)?
-    if today_held:
-        base_today = _mean_perplexity(score_fn, today_held, None)
-        new_today = _mean_perplexity(score_fn, today_held, new_adapter_id)
-        result.consolidation_score = base_today - new_today
-    # forgetting: did the new adapter regress prior-day held-out vs the incumbent?
-    new_prior = _mean_perplexity(score_fn, prior_held, new_adapter_id)
-    result.forgetting_score = new_prior - incumbent_ppl_prior
+    improved = result.new_perplexity < incumbent_ppl
+    drift_ok = not (result.gate_drift == result.gate_drift and result.gate_drift > drift_tolerance)  # nan-safe
 
-    # 6. gate decision: promote only if better overall AND not forgetting too much
-    incumbent = result.prev_perplexity if previous_adapter_id else result.base_perplexity
-    improved = result.new_perplexity < incumbent
-    forgot_too_much = result.forgetting_score > forgetting_tolerance * max(1e-6, incumbent_ppl_prior)
-
-    if improved and not forgot_too_much:
+    if improved and drift_ok:
         result.promoted = True
         result.decision_reason = (
-            f"promoted: held-out perplexity {result.new_perplexity:.3f} < incumbent "
-            f"{incumbent:.3f}, forgetting within tolerance"
+            f"promoted: today held-out ppl {result.new_perplexity:.3f} < incumbent "
+            f"{incumbent_ppl:.3f}; gate_drift {result.gate_drift:.3f} within tolerance"
         )
-        # store versioned adapter in Redis + point current at it
-        meta, _gates = read_adapter_file(adapters_dir, new_adapter_id)
+        meta, _g = read_adapter_file(adapters_dir, new_adapter_id)
         blob = (adapters_dir / f"adapter_{new_adapter_id}.safetensors").read_bytes()
         redis_client.store_adapter(meta, blob)
         redis_client.set_current_adapter(unit_label, new_adapter_id)
-        redis_client.set_corpus(unit_label, corpus)
     else:
-        if not improved:
-            result.decision_reason = (
-                f"rejected: held-out perplexity {result.new_perplexity:.3f} did not beat "
-                f"incumbent {incumbent:.3f}"
-            )
-        else:
-            result.decision_reason = (
-                f"rejected: forgetting {result.forgetting_score:.3f} exceeded tolerance"
-            )
-        # discard the rejected adapter so serving keeps the incumbent
+        result.decision_reason = (
+            f"rejected: ppl {result.new_perplexity:.3f} vs incumbent {incumbent_ppl:.3f}"
+            + ("" if improved else " (no improvement)")
+            + ("" if drift_ok else f"; drift {result.gate_drift:.3f} > tolerance")
+        )
         for suffix in (".safetensors", ".json"):
-            p = adapters_dir / f"adapter_{new_adapter_id}{suffix}"
-            p.unlink(missing_ok=True)
-        # still grow the corpus so tomorrow has more data to learn from
-        redis_client.set_corpus(unit_label, corpus)
+            (adapters_dir / f"adapter_{new_adapter_id}{suffix}").unlink(missing_ok=True)
+
+    # 6. delete the day's raw logs — memory now lives in the weights, not text
+    if delete_logs:
+        redis_client.clear_interactions(unit_label)
+        result.logs_deleted = True
 
     train_path.unlink(missing_ok=True)
     return result
