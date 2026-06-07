@@ -4,18 +4,39 @@ This is the contract for the **memory / personalization** track so it composes
 cleanly with the **tooling / governance** track (Tracks A + B). Read the root
 `README.md` first for the system overview.
 
+## Adapter decision (non-negotiable)
+
+OpenMirror uses **two separate adapter types**, composed at session time — **not**
+one adapter trained on both style and tool-calling.
+
+| | Personalization adapter | Tool adapter |
+|--|-------------------------|--------------|
+| **Count** | 1 per user (`user_style-{user_id}`) | 1 per skill (`weather`, `python`, …) |
+| **Training data** | Styled `(prompt, completion)` — tone, format, TL;DR, bullets | Tool-call `(prompt, completion)` — `weather("Paris")` |
+| **Behavior** | Broad — affects general replies | Narrow — emits only on matching prompts |
+| **Mint endpoint** | `POST /personalize` | `POST /skills` or self-improvement approval |
+| **Update cadence** | Nightly consolidation (batch) | On-demand (~36 s when registered/approved) |
+| **Runtime guard** | Not a tool — not in `authorized` set | In `authorized` set — blocked if revoked |
+| **Revoke** | `subtract(user_style)` — tools untouched | `subtract(weather)` — style untouched |
+
+**Why not one combined adapter?** A single controller trained on style + tools
+cannot be partially revoked, cannot update memory without touching tool gates,
+and conflates broad style with narrow emit patterns. Composition gives you
+orthogonal control; `smoke_style_plus_tool.py` proves it works.
+
 ## TL;DR
 
-A personalization adapter is **the same object as a tool skill**: a ~200 KB
-NTK-Mirror controller. The unique operations (`compose` = add, `subtract` =
-revoke) work across *any* controllers, so a user's effective model is:
+A personalization adapter is **the same NTK-Mirror object** as a tool adapter
+(same ~200 KB `.pt`, same Track A `/train`). They differ in **what they learn**
+and **how they lifecycle**. A user's effective model is the **composition** of
+separate stored adapters:
 
 ```
-base ⊕ user_style[user_id] ⊕ (the capabilities they're authorized for)
+session_controller = compose([ user_style[user_id], *authorized_tool_controllers ])
 ```
 
 Two orthogonal axes — **who you are** (style) and **what you can do** (tools) —
-combined by one `compose()` call in the control plane.
+merged by one `compose()` call, **not** one training run.
 
 ## The hard rule (read this first)
 
