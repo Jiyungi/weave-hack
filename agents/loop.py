@@ -38,6 +38,14 @@ from .brain import Brain, get_brain
 # so this only bites the human-in-the-loop path.
 APPROVAL_TIMEOUT_S = float(os.environ.get("OPENMIRROR_APPROVAL_TIMEOUT_S", "120"))
 APPROVAL_POLL_S = float(os.environ.get("OPENMIRROR_APPROVAL_POLL_S", "2"))
+_OBS_MAX = int(os.environ.get("OPENMIRROR_OBS_MAX_CHARS", "600"))
+
+
+def _clip_obs(text: str) -> str:
+    one_line = " ".join(str(text).split())
+    if len(one_line) <= _OBS_MAX:
+        return one_line
+    return one_line[: _OBS_MAX - 3] + "..."
 
 
 SYSTEM_TEMPLATE = """You are an agent named '{principal}'.
@@ -268,7 +276,7 @@ def _format_observation(step: Step) -> str:
     parts: list[str] = []
     if step.allowed:
         for tname, obs in zip(step.allowed, step.observations):
-            parts.append(f"ALLOWED {tname}(...): {obs}")
+            parts.append(f"ALLOWED {tname}(...): {_clip_obs(obs)}")
     if step.blocked:
         for tname in step.blocked:
             parts.append(f"BLOCKED {tname}(...): runtime guard denied -- not in your authorized set")

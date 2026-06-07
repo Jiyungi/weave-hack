@@ -20,6 +20,7 @@ the demo gets noisy.
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Optional
@@ -28,6 +29,17 @@ from control_plane.trace import attributes, op
 
 from . import cp, loop, tools
 from .brain import Brain, get_brain
+
+_OBS_MAX = int(os.environ.get("OPENMIRROR_OBS_MAX_CHARS", "600"))
+
+
+def _clip(text: str, limit: int | None = None) -> str:
+    """Keep brain/orchestrator context bounded — tool output can be 4000+ chars."""
+    limit = limit if limit is not None else _OBS_MAX
+    one_line = " ".join(str(text).split())
+    if len(one_line) <= limit:
+        return one_line
+    return one_line[: limit - 3] + "..."
 
 
 ORCH_SYSTEM = """You are the orchestrator. You coordinate a team of governed
@@ -102,7 +114,7 @@ class Delegation:
         for i, s in enumerate(r.steps, 1):
             if s.allowed:
                 for tname, obs in zip(s.allowed, s.observations):
-                    obs_lines.append(f"  step{i} {tname}: {obs}")
+                    obs_lines.append(f"  step{i} {tname}: {_clip(obs)}")
             if s.blocked:
                 for tname in s.blocked:
                     obs_lines.append(f"  step{i} BLOCKED {tname}")
@@ -110,7 +122,7 @@ class Delegation:
             f"DELEGATION ({self.worker}) -> {self.subtask!r}",
             f"  authorized: {r.authorized}  denied: {r.denied}",
             f"  tools used (allowed): {allowed}  blocked: {blocked}",
-            f"  final: {r.final_answer or '(no FINAL emitted)'}",
+            f"  final: {_clip(r.final_answer or '(no FINAL emitted)', 800)}",
         ]
         if obs_lines:
             summary.append("  observations:")
