@@ -17,11 +17,11 @@ export function AuditFeed() {
           const time = new Date((e.ts || 0) * 1000).toLocaleTimeString();
           const { ts, event, ...rest } = e;
           const cls =
-            event === "act"
+            event === "act" || event === "act_gate"
               ? e.permitted === false
                 ? "border-l-bad bg-[#1b0f0f]"
                 : "border-l-good"
-              : event === "revoke"
+              : event === "revoke" || event === "revoke_policy"
                 ? "border-l-bad"
                 : event === "open_session" || event === "personalize"
                   ? "border-l-accent"

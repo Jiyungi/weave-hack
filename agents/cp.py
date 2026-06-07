@@ -78,6 +78,12 @@ def set_policy(principal: str, allowed_skills: list[str]) -> dict:
                     {"principal": principal, "allowed_skills": allowed_skills})
 
 
+@op(name="cp_client.revoke_policy")
+def revoke_policy(principal: str, skill: str) -> dict:
+    return _request("POST", "/policy/revoke",
+                    {"principal": principal, "skill": skill})
+
+
 @op(name="cp_client.register_tool")
 def register_tool(skill: str, examples: list[dict], description: str = "",
                   grants: dict[str, list[str]] | None = None) -> dict:

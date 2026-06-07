@@ -13,7 +13,7 @@ from .state import state
 from .store import CPError
 from .track_a import TrackAError
 from .schemas import (ActGateReq, ActReq, ApprovalReq, CapabilityRequestReq, MemoryConsolidateReq,
-                      MemoryLogReq, PersonalizeReq,
+                      MemoryLogReq, PersonalizeReq, PolicyRevokeReq,
                       PolicyReq, RegisterReq, RegisterSkillReq, RevokeReq,
                       SessionReq, TrainSkillReq)
 
@@ -119,6 +119,12 @@ def register_tool(req: RegisterReq):
 @app.post("/policy")
 def set_policy(req: PolicyReq):
     return store.set_policy(req.principal, req.allowed_skills)
+
+
+@app.post("/policy/revoke")
+def revoke_policy(req: PolicyRevokeReq):
+    """Remove one skill from a principal's policy (blocks future sessions)."""
+    return store.revoke_policy(req.principal, req.skill)
 
 
 @app.post("/personalize")

@@ -293,7 +293,12 @@ def _gate_and_execute(step: Step, session_id: str, tool_name: str, arg: str) -> 
         pass
     probe_arg = teacher.pick_probe_arg(mint_args, list(tool.sample_args))
     probe = tool.prompt_template.format(arg=probe_arg)
-    governed = cp.act_gate(session_id, tool_name, probe, max_new_tokens=48)
+    try:
+        governed = cp.act_gate(session_id, tool_name, probe, max_new_tokens=48)
+    except cp.ControlPlaneError as e:
+        step.note = str(e)
+        step.blocked = [tool_name]
+        return
     step.governed_completion = governed.get("completion", "")
     step.allowed = list(governed.get("allowed_calls", []))
     step.blocked = list(governed.get("blocked_calls", []))

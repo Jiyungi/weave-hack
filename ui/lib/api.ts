@@ -141,6 +141,12 @@ export const cp = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ principal, allowed_skills }),
     }),
+  revokePolicy: (principal: string, skill: string) =>
+    fetchJson<Record<string, unknown>>("/api/cp/policy/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ principal, skill }),
+    }),
   openSession: (body: {
     principal: string;
     skills: string[];

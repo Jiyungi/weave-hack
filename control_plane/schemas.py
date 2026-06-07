@@ -59,6 +59,12 @@ class RevokeReq(BaseModel):
     skill: str
 
 
+class PolicyRevokeReq(BaseModel):
+    """Remove one skill from a principal's policy (affects all future sessions)."""
+    principal: str
+    skill: str
+
+
 class CapabilityRequestReq(BaseModel):
     """A (self-improving) agent requests a skill it lacks. Hybrid approval:
     auto-granted if safe, parked as pending if ``sensitive``. ``examples`` lets

@@ -100,6 +100,21 @@ def set_policy(principal: str, allowed_skills: list[str]) -> dict:
     return {"principal": principal, "allowed_skills": sorted(allowed)}
 
 
+@op(name="cp.revoke_policy")
+def revoke_policy(principal: str, skill: str) -> dict:
+    """Remove a skill from a principal's policy so new sessions cannot grant it."""
+    current = state.get_policy(principal)
+    if skill not in current:
+        raise CPError(f"skill {skill!r} not in policy for {principal!r} "
+                      f"(allowed: {sorted(current)})")
+    allowed = current - {skill}
+    state.set_policy(principal, allowed)
+    audit.record("revoke_policy", principal=principal, skill=skill,
+                 allowed=sorted(allowed))
+    return {"principal": principal, "revoked": skill,
+            "allowed_skills": sorted(allowed)}
+
+
 @op(name="cp.personalize")
 def personalize(user_id: str, examples: list[dict]) -> dict:
     """Mint/refresh a user's personalization (style) adapter via Track A.
