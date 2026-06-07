@@ -109,3 +109,16 @@ def merge_policy(worker: str, current: set[str], available: set[str]) -> set[str
     """Add role-default skills that are registered but missing from ``current``."""
     wanted = default_policy_for(worker, available)
     return current | wanted
+
+
+def orchestrator_routing_hints(workers: list[WorkerSpec] | None = None) -> str:
+    """Capability-based routing lines for the orchestrator system prompt."""
+    workers = workers or default_workers()
+    lines = [f"- {w.description} -> {w.name}" for w in workers]
+    lines.extend([
+        "- Prefer structured tools (web_search, stock_price, weather, calculator) "
+        "over http_fetch on JS-heavy or finance sites",
+        "- Do not FINAL with numbers, dates, or facts unless they appear verbatim "
+        "in delegation observations",
+    ])
+    return "\n".join(lines)

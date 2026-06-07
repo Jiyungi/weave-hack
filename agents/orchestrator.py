@@ -22,14 +22,14 @@ from typing import Optional
 
 from control_plane.trace import attributes, op
 
-from . import tools
-from . import cp, loop
+from . import cp, grounding, loop
 from .brain import Brain, get_brain
 from .workers import (
     WorkerSpec,
     default_policy_for,
     default_workers,
     merge_policy,
+    orchestrator_routing_hints,
 )
 
 _OBS_MAX = int(os.environ.get("OPENMIRROR_OBS_MAX_CHARS", "600"))
@@ -39,12 +39,7 @@ Worker = WorkerSpec
 
 def _clip(text: str, limit: int | None = None) -> str:
     limit = limit if limit is not None else _OBS_MAX
-    if not tools.looks_like_text(str(text)):
-        text = "[observation omitted: binary or non-text response]"
-    one_line = " ".join(str(text).split())
-    if len(one_line) <= limit:
-        return one_line
-    return one_line[: limit - 3] + "..."
+    return grounding.clip_observation(text, limit)
 
 
 ORCH_SYSTEM = """You are the orchestrator. You coordinate a team of governed
@@ -58,11 +53,7 @@ needed tool, the run will be BLOCKED -- choose wisely):
 {worker_doc}
 
 Routing hints:
-- Web lookup, facts, news, documents -> research-agent (web_search first)
-- Stock / ticker / share price / crypto price -> ops-agent
-  Use stock_price("TICKER") or crypto_price("coin") — NOT http_fetch on finance sites
-- Python, calculator, files, data/code execution -> ops-agent
-- Weather only -> support-agent (support-agent CANNOT use calendar or python)
+{routing_hints}
 
 Task: {task}
 
@@ -78,8 +69,8 @@ Rules:
   different worker before FINAL. Do not give up after one BLOCKED.
 - Do not FINAL until every sub-task either succeeded or you exhausted workers.
 - Stop with FINAL once you have enough information. Do not loop endlessly.
-- Cite a numeric price in FINAL only if that exact value appears in a delegation
-  observation. Do not invent prices or use placeholder text like {{output}}.
+- FINAL must cite only values that appear in delegation observations. Do not
+  invent numbers, dates, or facts, and never use placeholder text like {{output}}.
 """
 
 
@@ -88,16 +79,6 @@ _DELEGATE_RE = re.compile(
 )
 _FINAL_RE = re.compile(r"^FINAL:\s*(.+)\Z", re.MULTILINE | re.DOTALL)
 _THOUGHT_RE = re.compile(r"^THOUGHT:\s*(.+?)$", re.MULTILINE)
-_FINANCE_TASK_RE = re.compile(
-    r"\b(stock|share|price|ticker|crypto|market|trading|bitcoin|ethereum)\b",
-    re.I,
-)
-_PRICE_TOKEN_RE = re.compile(r"\$?\d+\.\d{2,}")
-_PLACEHOLDER_RE = re.compile(r"\{\{[^}]+\}\}")
-_UNVERIFIED_RE = re.compile(
-    r"\b(could not verify|unable to|no price|not found|couldn't find)\b",
-    re.I,
-)
 
 
 def _worker_doc(workers: list[WorkerSpec], snapshot: dict) -> str:
@@ -152,6 +133,12 @@ class Delegation:
         if obs_lines:
             summary.append("  observations:")
             summary.extend(obs_lines)
+        elif allowed:
+            summary.append("  observations: (empty — do not FINAL with invented facts)")
+        elif not blocked:
+            summary.append(
+                "  observations: (no usable tool output — try another worker or tool)"
+            )
         return "\n".join(summary)
 
 
@@ -186,6 +173,19 @@ def _pending_blocked(delegations: list[Delegation]) -> bool:
     return delegations[-1].had_blocked()
 
 
+def _delegation_has_evidence(d: Delegation) -> bool:
+    if d.result is None:
+        return False
+    for step in d.result.steps:
+        if _step_has_useful_obs(step):
+            return True
+    return False
+
+
+def _step_has_useful_obs(step: loop.Step) -> bool:
+    return any(grounding.observation_is_useful(obs) for obs in step.observations)
+
+
 def _collect_observations(delegations: list[Delegation]) -> str:
     parts: list[str] = []
     for d in delegations:
@@ -196,32 +196,16 @@ def _collect_observations(delegations: list[Delegation]) -> str:
     return "\n".join(parts)
 
 
-def _normalize_price(token: str) -> str:
-    return token.lstrip("$")
-
-
 def _final_grounding_issue(task: str, final: str,
                            delegations: list[Delegation]) -> str | None:
     """Return a rejection message when FINAL is not supported by observations."""
-    if _PLACEHOLDER_RE.search(final):
-        return (
-            "FINAL contains template placeholders; delegate to a worker and "
-            "use real tool results."
-        )
-    if not _FINANCE_TASK_RE.search(task):
-        return None
-    obs_text = _collect_observations(delegations)
-    final_prices = {_normalize_price(p) for p in _PRICE_TOKEN_RE.findall(final)}
-    if not final_prices:
-        return None
-    if _UNVERIFIED_RE.search(final):
-        return None
-    obs_prices = {_normalize_price(p) for p in _PRICE_TOKEN_RE.findall(obs_text)}
-    if final_prices <= obs_prices:
-        return None
-    return (
-        "FINAL price not supported by tool observations; delegate to ops-agent "
-        "with stock_price or research-agent with web_search."
+    del task  # grounding is evidence-based, not task-regex-based
+    evidence = _collect_observations(delegations)
+    has_evidence = any(_delegation_has_evidence(d) for d in delegations)
+    return grounding.final_grounding_issue(
+        final,
+        evidence,
+        require_evidence=not has_evidence,
     )
 
 
@@ -311,7 +295,11 @@ def run(task: str, *,
     snap = cp.state()
     available = sorted(snap.get("skills", {}).keys())
 
-    sys_msg = ORCH_SYSTEM.format(worker_doc=_worker_doc(workers, snap), task=task)
+    sys_msg = ORCH_SYSTEM.format(
+        worker_doc=_worker_doc(workers, snap),
+        routing_hints=orchestrator_routing_hints(workers),
+        task=task,
+    )
     messages: list[dict] = [{"role": "system", "content": sys_msg}]
     for turn in history or []:
         role = turn.get("role")

@@ -29,7 +29,7 @@ from typing import Optional
 
 from control_plane.trace import attributes, op
 
-from . import cp, teacher, tools
+from . import cp, grounding, teacher, tools
 from .brain import Brain, get_brain
 
 
@@ -41,17 +41,8 @@ APPROVAL_POLL_S = float(os.environ.get("OPENMIRROR_APPROVAL_POLL_S", "2"))
 _OBS_MAX = int(os.environ.get("OPENMIRROR_OBS_MAX_CHARS", "600"))
 
 
-def _sanitize_obs(text: str) -> str:
-    if tools.looks_like_text(text):
-        return text
-    return "[observation omitted: binary or non-text response]"
-
-
 def _clip_obs(text: str) -> str:
-    one_line = " ".join(_sanitize_obs(str(text)).split())
-    if len(one_line) <= _OBS_MAX:
-        return one_line
-    return one_line[: _OBS_MAX - 3] + "..."
+    return grounding.clip_observation(text, _OBS_MAX)
 
 
 SYSTEM_TEMPLATE = """You are an agent named '{principal}'.
@@ -75,6 +66,8 @@ Rules:
   EXCEPT tools shown with a ```python``` block, which use that block form instead.
 - If a previous ACTION was BLOCKED or DROPPED, choose a different tool or finish
   with FINAL using what you already know.{request_rule}
+- Do not invent numbers, dates, or facts — FINAL must only cite values that
+  appeared in prior OBSERVATION lines from allowed tool calls.
 - Keep going until you can answer. Do not loop -- stop with FINAL.
 """
 
@@ -273,6 +266,17 @@ def _parse_brain(
     if action_m:
         return thought, (action_m.group(1), action_m.group(2)), None, None
     return thought, None, None, None
+
+
+def _prior_evidence(steps: list[Step]) -> str:
+    parts: list[str] = []
+    for step in steps:
+        parts.extend(step.observations)
+    return "\n".join(parts)
+
+
+def _step_has_useful_obs(step: Step) -> bool:
+    return any(grounding.observation_is_useful(obs) for obs in step.observations)
 
 
 def _format_observation(step: Step) -> str:
@@ -597,6 +601,21 @@ def run(principal: str, skills: list[str], task: str, *,
                 authorized=set(authorized),
             )
             if step.final is not None:
+                evidence = _prior_evidence(steps)
+                has_useful = any(_step_has_useful_obs(s) for s in steps)
+                issue = grounding.final_grounding_issue(
+                    step.final,
+                    evidence,
+                    require_evidence=not has_useful,
+                )
+                if issue:
+                    steps.append(step)
+                    messages.append({"role": "assistant",
+                                     "content": f"FINAL: {step.final}"})
+                    messages.append({"role": "user",
+                                     "content": f"OBSERVATION: {issue} "
+                                     "Run another ACTION or revise FINAL."})
+                    continue
                 steps.append(step)
                 stopped_reason = "final"
                 break

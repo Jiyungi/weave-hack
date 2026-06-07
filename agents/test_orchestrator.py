@@ -133,7 +133,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_final_grounding_rejects_ungrounded_price(self) -> None:
         issue = orchestrator._final_grounding_issue(
-            "what's the stock price of NVDA yesterday",
+            "stock query",
             "The price was $197.50 yesterday.",
             [
                 orchestrator.Delegation(
@@ -148,11 +148,11 @@ class OrchestratorTests(unittest.TestCase):
             ],
         )
         self.assertIsNotNone(issue)
-        self.assertIn("not supported", issue or "")
+        self.assertIn("197.50", issue or "")
 
     def test_final_grounding_accepts_matching_price(self) -> None:
         issue = orchestrator._final_grounding_issue(
-            "NVDA stock price yesterday",
+            "stock query",
             "NVDA closed at $214.86 yesterday.",
             [
                 orchestrator.Delegation(
@@ -167,6 +167,15 @@ class OrchestratorTests(unittest.TestCase):
             ],
         )
         self.assertIsNone(issue)
+
+    def test_final_grounding_requires_evidence_without_delegations(self) -> None:
+        issue = orchestrator._final_grounding_issue(
+            "any task",
+            "The value is 42.00.",
+            [],
+        )
+        self.assertIsNotNone(issue)
+        self.assertIn("observations", issue or "")
 
     def test_final_grounding_rejects_placeholders(self) -> None:
         issue = orchestrator._final_grounding_issue(

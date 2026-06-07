@@ -44,6 +44,13 @@ class HttpGetTests(unittest.TestCase):
                 tools._http_fetch("https://example.com/page")
         self.assertIn("binary", str(ctx.exception).lower())
 
+    def test_http_fetch_flattens_html(self) -> None:
+        html = "<html><body><p>Hello <b>world</b></p></body></html>"
+        with patch("agents.tools._http_get", return_value=html):
+            body = tools._http_fetch("https://example.com/page")
+        self.assertIn("Hello world", body)
+        self.assertNotIn("<b>", body)
+
 
 if __name__ == "__main__":
     unittest.main()

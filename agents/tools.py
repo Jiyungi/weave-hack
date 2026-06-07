@@ -68,10 +68,9 @@ def extract_arg(completion: str, tool_name: str) -> str | None:
 
 def looks_like_text(text: str) -> bool:
     """True when decoded body is mostly printable (not gzip/binary garbage)."""
-    if not text:
-        return True
-    bad = sum(1 for c in text if ord(c) < 32 and c not in "\t\n\r")
-    return bad / len(text) <= 0.15
+    from . import grounding
+
+    return grounding.looks_like_text(text)
 
 
 def _decode_http_body(raw: bytes, content_encoding: str = "") -> str:
@@ -268,7 +267,7 @@ def _web_search(q: str) -> str:
 
 
 def _http_fetch(url: str) -> str:
-    """GET a URL, return up to 4000 chars of body."""
+    """GET a URL, return up to 4000 chars of readable text."""
     if not url.startswith(("http://", "https://")):
         raise ToolError("http_fetch requires an http(s) URL")
     try:
@@ -277,9 +276,12 @@ def _http_fetch(url: str) -> str:
         raise ToolError(f"http_fetch failed: {e}") from e
     if not looks_like_text(body):
         raise ToolError(
-            "response looks binary/compressed; use stock_price or web_search "
-            "instead of scraping this URL"
+            "response looks binary/compressed; prefer web_search or a "
+            "structured tool instead of scraping this URL"
         )
+    from . import grounding
+
+    body = grounding.normalize_tool_output(body)
     return body[:4000] + ("\n...[truncated]" if len(body) > 4000 else "")
 
 
@@ -583,13 +585,16 @@ def register(tool: Tool) -> None:
 @op(name="tool.execute")
 def execute(name: str, arg: str) -> str:
     """Run a tool by name with a single string argument. Always returns a string."""
+    from . import grounding
+
     tool = get(name)
     try:
-        return tool.executor(arg)
+        out = tool.executor(arg)
     except ToolError as e:
-        return f"[{name} error] {e}"
+        out = f"[{name} error] {e}"
     except Exception as e:  # noqa: BLE001 -- never let a tool crash the loop
-        return f"[{name} unexpected error] {type(e).__name__}: {e}"
+        out = f"[{name} unexpected error] {type(e).__name__}: {e}"
+    return grounding.normalize_tool_output(out)
 
 
 def schemas() -> list[dict]:
