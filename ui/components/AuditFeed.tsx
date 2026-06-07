@@ -9,7 +9,7 @@ export function AuditFeed() {
 
   return (
     <Card
-      title="5 · Audit feed"
+      title="Audit feed"
       badge={<Pill variant="muted">{backend}</Pill>}
     >
       <div className="flex max-h-[340px] flex-col gap-1.5 overflow-auto">

@@ -50,7 +50,7 @@ export function RevokePanel() {
   }
 
   return (
-    <Card title="3 · Revoke">
+    <Card title="Revoke">
       <Label>Session</Label>
       <Select value={sessionId} onChange={setSessionId} options={sessionOpts} />
       <Label>Skill</Label>

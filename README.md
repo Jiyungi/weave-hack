@@ -26,7 +26,7 @@ The `weather`/`calendar` skills here are deliberately simple **stand-ins for rea
 
 ```
             ┌──────────────────────── [Track C] CopilotKit UI :3000 ───────────────────────┐
-            │  panels (seed · session · act · revoke · audit · committee) + Copilot chat     │
+            │  run agents · capabilities & policies · audit · inspect mechanism + Copilot chat │
             └───────────────┬──────────────────────────────────────────┬───────────────────┘
                             │ same-origin proxy                          │ chat
                             ▼                                            ▼

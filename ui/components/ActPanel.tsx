@@ -43,7 +43,7 @@ export function ActPanel() {
   }
 
   return (
-    <Card title="4 · Act console">
+    <Card title="Act console">
       <Label>Session</Label>
       <Select value={sessionId} onChange={setSessionId} options={sessionOpts} />
       <Label>Prompt</Label>

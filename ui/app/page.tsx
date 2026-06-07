@@ -4,13 +4,12 @@ import { CopilotSidebar } from "@copilotkit/react-ui";
 import { DashboardProvider } from "@/lib/dashboard-context";
 import { CopilotActions } from "@/lib/copilot-actions";
 import { HealthBar } from "@/components/HealthBar";
-import { SetupPanel } from "@/components/SetupPanel";
+import { CapabilitiesPanel } from "@/components/CapabilitiesPanel";
 import { SessionPanel } from "@/components/SessionPanel";
 import { RevokePanel } from "@/components/RevokePanel";
 import { ActPanel } from "@/components/ActPanel";
 import { AuditFeed } from "@/components/AuditFeed";
 import { AgentsPanel } from "@/components/AgentsPanel";
-import { CommitteePanel } from "@/components/CommitteePanel";
 
 export default function Home() {
   return (
@@ -35,18 +34,35 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1400px] grid-cols-1 gap-5 p-5 pb-28 lg:grid-cols-2 lg:px-6">
-        <div className="flex flex-col gap-5">
-          <SetupPanel />
-          <SessionPanel />
-          <RevokePanel />
-        </div>
-        <div className="flex flex-col gap-5">
-          <ActPanel />
+      <main className="mx-auto flex max-w-[1400px] flex-col gap-5 p-5 pb-28 lg:px-6">
+        {/* Hero: the product — autonomous governed agents */}
+        <AgentsPanel />
+
+        {/* Provision (what can be done + by whom) and Observe (what happened) */}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <CapabilitiesPanel />
           <AuditFeed />
         </div>
-        <AgentsPanel />
-        <CommitteePanel />
+
+        {/* Advanced: drive the raw governance primitives by hand to see the
+            mechanism the orchestrator uses internally. Collapsed by default. */}
+        <details className="group animate-fade-in rounded-xl border border-line bg-panel/40 backdrop-blur-sm">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3.5 text-[12px] font-semibold uppercase tracking-[0.14em] text-muted transition-colors hover:text-text">
+            <span className="h-3 w-1 rounded-full bg-accent-grad" />
+            Inspect the mechanism
+            <span className="ml-1 normal-case tracking-normal text-muted/70">
+              advanced — open session · act · revoke by hand
+            </span>
+            <span className="ml-auto text-muted transition-transform group-open:rotate-90">
+              ›
+            </span>
+          </summary>
+          <div className="grid grid-cols-1 gap-5 border-t border-line p-5 lg:grid-cols-3">
+            <SessionPanel />
+            <ActPanel />
+            <RevokePanel />
+          </div>
+        </details>
       </main>
 
       <CopilotSidebar

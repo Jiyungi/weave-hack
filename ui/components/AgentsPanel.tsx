@@ -41,7 +41,7 @@ export function AgentsPanel() {
 
   return (
     <Card
-      title="6 · Agents — orchestrator + governed workers"
+      title="Run agents — orchestrator + governed workers"
       badge={
         agOk ? (
           <Pill variant="good">connected</Pill>
@@ -49,7 +49,6 @@ export function AgentsPanel() {
           <Pill variant="bad">disconnected</Pill>
         )
       }
-      className="col-span-2"
     >
       <p className="mb-2 text-[11.5px] text-muted">
         Task for the orchestrator (delegates to{" "}

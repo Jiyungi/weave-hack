@@ -51,7 +51,7 @@ export function SessionPanel() {
   }
 
   return (
-    <Card title="2 · Open session">
+    <Card title="Open session">
       <Label>Principal</Label>
       <Select
         value={principal}
