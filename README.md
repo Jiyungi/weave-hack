@@ -8,6 +8,8 @@ OpenMirror treats **both** personalization and permissions as the same object: *
 
 Built on [NTK-Mirror](https://github.com/leochlon/ntkmirror) skill arithmetic — LoRA can't subtract cleanly; prompts can't revoke cleanly. This can.
 
+**Sponsor integrations:** [Redis](https://redis.io) (required state + audit), [CopilotKit](https://copilotkit.ai) (dashboard UI), [Weights & Biases / Weave](https://wandb.ai) (tracing).
+
 ---
 
 ## Adapter model (read this — we are explicit)

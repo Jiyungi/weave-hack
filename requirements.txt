@@ -29,7 +29,7 @@ weave>=0.51  # optional
 # sessions) and the audit stream are backed by Redis instead of in-memory dicts,
 # so they survive restarts and are shared across processes. Absent/unset =>
 # in-memory fallback, demo runs anywhere.
-redis>=5.0  # optional
+redis>=5.0  # required — governance state, memory logs, audit stream
 
 # Tool implementations: the calculator tool solves equations (not just
 # arithmetic) when sympy is present; it degrades to arithmetic-only otherwise.

@@ -116,17 +116,25 @@ else
   echo "  ui/package.json not found — skip"
 fi
 
-# Optional durable state: a local Redis lets the control plane persist skills/
-# policies/sessions across restarts and share them across processes. Best-effort
-# install; the app falls back to in-memory if Redis is absent.
-echo "=== [redis] durable governance state (optional) ==="
+echo "=== [redis] required — governance state + audit (sponsor) ==="
 if command -v redis-server >/dev/null 2>&1; then
-  echo "  redis-server already installed"
+  redis-cli ping >/dev/null 2>&1 || redis-server --daemonize yes >/dev/null 2>&1 || true
+  if redis-cli ping >/dev/null 2>&1; then
+    echo "  redis: running"
+  else
+    echo "  ERROR: redis-server installed but not running" >&2
+    exit 1
+  fi
 elif command -v apt-get >/dev/null 2>&1; then
-  (sudo apt-get install -y redis-server >/dev/null 2>&1 && echo "  installed redis-server") \
-    || echo "  could not install redis-server (no sudo?) — state will be in-memory"
+  sudo apt-get install -y redis-server >/dev/null 2>&1 || {
+    echo "  ERROR: install redis-server: sudo apt-get install -y redis-server" >&2
+    exit 1
+  }
+  redis-server --daemonize yes >/dev/null 2>&1 || true
+  echo "  redis: installed and started"
 else
-  echo "  apt-get not available — skip redis (state will be in-memory)"
+  echo "  ERROR: redis-server required — install manually" >&2
+  exit 1
 fi
 
 echo ""

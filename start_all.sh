@@ -24,6 +24,32 @@ BRAIN_GPU_UTIL="${OPENMIRROR_BRAIN_GPU_UTIL:-0.45}"
 
 CMD="${1:-start}"
 
+load_repo_env() {
+  # Do NOT `source .env` — cron-like values (e.g. BATCH_SCHEDULE=0 3 * * *) break bash.
+  local env_file="$REPO/.env"
+  [ -f "$env_file" ] || return 0
+  export ENV_FILE="$env_file"
+  eval "$("$VENV/bin/python" - <<'PY'
+import os, re, shlex
+from pathlib import Path
+p = Path(os.environ["ENV_FILE"])
+for line in p.read_text().splitlines():
+    s = line.strip()
+    if not s or s.startswith("#") or "=" not in s:
+        continue
+    key, _, val = s.partition("=")
+    key = key.strip()
+    val = val.strip()
+    if val and val[0] not in "\"'":
+        val = re.split(r"\s+#", val, maxsplit=1)[0].strip()
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+        val = val[1:-1]
+    if key:
+        print(f"export {key}={shlex.quote(val)}")
+PY
+)"
+}
+
 wait_for_port() {
   local port="$1" label="$2" max_secs="${3:-180}"
   local i=0
@@ -114,20 +140,25 @@ start_session() {
   require_tmux
   require_venv
   require_repo
+  ENV_FILE="$REPO/.env" load_repo_env
 
   if session_running; then
     echo "session '$SESSION' already running — attaching (use 'stop' or 'restart' to reset)"
     exec tmux attach -t "$SESSION"
   fi
 
-  # Durable/shared governance state: start a local Redis if available and point
-  # the control plane at it. If Redis isn't installed/reachable, state.py and
-  # audit.py fall back to in-memory automatically, so this is best-effort.
-  local redis_url="${REDIS_URL:-}"
-  if command -v redis-server >/dev/null 2>&1; then
-    redis-cli ping >/dev/null 2>&1 || redis-server --daemonize yes >/dev/null 2>&1 || true
-    redis_url="${redis_url:-redis://localhost:6379/0}"
+  # Redis (required sponsor integration): governance state + memory logs + audit.
+  if ! command -v redis-server >/dev/null 2>&1; then
+    echo "redis-server is required. Install: sudo apt-get install -y redis-server" >&2
+    exit 1
   fi
+  redis-cli ping >/dev/null 2>&1 || redis-server --daemonize yes >/dev/null 2>&1 || true
+  if ! redis-cli ping >/dev/null 2>&1; then
+    echo "Redis is not running. Start redis-server and retry." >&2
+    exit 1
+  fi
+  local redis_url="${REDIS_URL:-redis://localhost:6379/0}"
+  export REDIS_URL="$redis_url"
 
   # ntkmirror is a clone on PYTHONPATH (its .pth can be wiped by pip/uv installs);
   # exporting it here makes Track A's `import ntkmirror` self-heal on every start.
@@ -182,9 +213,7 @@ cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true && \
   echo "  brain (vLLM) is OPTIONAL — only chat + Track D live reasoning need it."
   echo "  track-a + track-b are the governance demo and start on their own; track-d waits for :8100."
   if [ -n "$redis_url" ]; then
-    echo "  state: Redis ($redis_url) — durable + shared"
-  else
-    echo "  state: in-memory (install redis-server for durable state)"
+    echo "  state: Redis ($redis_url)"
   fi
   echo "  attach:       bash start_all.sh attach   (detach: Ctrl-b d)"
   echo "  status:       bash start_all.sh status"
@@ -194,7 +223,7 @@ cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true && \
   echo "  memory: log chats with user_id (Agents panel) → consolidate:"
   echo "          python scripts/consolidate_memory.py --user alice"
   echo "          (or: python -m memory.consolidate --user alice)"
-  echo "          Redis recommended for durable interaction logs (REDIS_URL in .env)."
+  echo "          (requires Redis — REDIS_URL=$redis_url)"
   echo ""
 }
 

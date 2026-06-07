@@ -54,8 +54,8 @@ flowchart LR
 ## Storage
 
 - **Controllers:** `data/adapters/*.pt` (~200 KB each). NTK engine owns train/compose/subtract.
-- **Redis (optional):** policies, sessions, personalization index, pending interaction logs (`cp:interactions`), audit stream. Controllers are **not** stored as Redis blobs in the production path.
-- **Weave (optional):** distributed traces across services.
+- **Redis (required):** policies, sessions, personalization index, pending interaction logs (`cp:interactions`), audit stream (`cp:audit`). Audit feed reads from the Redis stream.
+- **Weave / W&B (sponsor):** distributed traces across services when `WANDB_API_KEY` is set.
 
 ## Personalization loop
 
