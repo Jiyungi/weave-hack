@@ -169,103 +169,103 @@ tracks — for example wave 2 runs Track A's `2.2/2.3/3.1`, Track B's `5.2–5.7
 - [ ] 4. Checkpoint - Track A verified
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Track B — Data pipeline and GPT curation — _Owner: Engineer B / Track B_
-  - [ ] 5.1 Implement the Data_Pipeline split builder
+- [x] 5. Track B — Data pipeline and GPT curation — _Owner: Engineer B / Track B_
+  - [x] 5.1 Implement the Data_Pipeline split builder
     - Load per-Unit source data; emit `train.jsonl` and `heldout.jsonl` of Training_Pairs with
       `unit_label` matching the Unit; guarantee no train/held-out overlap; include Units with
       `>= min_rows` and exclude+record those below
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 4.2, 4.3_
 
-  - [ ]* 5.2 Write property test for valid training-pair schema and labels
+  - [x]* 5.2 Write property test for valid training-pair schema and labels
     - **Property 12: Training pairs carry valid schema and correct unit labels**
     - **Validates: Requirements 4.1, 4.2, 11.1, 11.2**
 
-  - [ ]* 5.3 Write property test for non-overlapping splits
+  - [x]* 5.3 Write property test for non-overlapping splits
     - **Property 13: Train and held-out splits do not overlap**
     - **Validates: Requirements 4.3, 11.3**
 
-  - [ ]* 5.4 Write property test for minimum-rows inclusion threshold
+  - [x]* 5.4 Write property test for minimum-rows inclusion threshold
     - **Property 14: Unit inclusion respects the minimum-rows threshold**
     - **Validates: Requirements 11.4**
 
-  - [ ] 5.5 Implement the GPT_Curation_Node
+  - [x] 5.5 Implement the GPT_Curation_Node
     - Turn raw interactions into Training_Pairs conforming to Requirement 4 as the only GPT caller;
       support a swappable local curation model emitting the same schema; discard uncurable
       interactions and record the discarded count
     - _Requirements: 12.1, 12.2, 12.3, 12.4_
 
-  - [ ]* 5.6 Write property test for curation schema conformance
+  - [x]* 5.6 Write property test for curation schema conformance
     - **Property 15: Curation output conforms to the Training_Pair schema**
     - **Validates: Requirements 12.1, 12.3**
 
-  - [ ]* 5.7 Write property test for curation count conservation
+  - [x]* 5.7 Write property test for curation count conservation
     - **Property 16: Curation conserves and accounts for every interaction**
     - **Validates: Requirements 12.4**
 
-- [ ] 6. Track B — LangGraph nightly-batch graph — _Owner: Engineer B / Track B_
-  - [ ] 6.1 Implement the batch graph node sequence and state
+- [x] 6. Track B — LangGraph nightly-batch graph — _Owner: Engineer B / Track B_
+  - [x] 6.1 Implement the batch graph node sequence and state
     - Build the `collect → curate → train → eval → store` state machine; the `train` node invokes
       Track A's `train_adapter` (mocked until integration) with curated path + labels; the `store`
       node persists each Adapter_File and metadata through the Redis_Client_API
     - _Requirements: 13.1, 13.2, 13.3_
 
-  - [ ] 6.2 Implement batch-only execution and chat-trigger blocking
+  - [x] 6.2 Implement batch-only execution and chat-trigger blocking
     - Run as a batch job that never trains on a live chat request and blocks chat-triggered graph
       execution while a batch run is in progress
     - _Requirements: 13.4, 13.5_
 
-  - [ ] 6.3 Implement per-unit failure isolation and critical-halt handling
+  - [x] 6.3 Implement per-unit failure isolation and critical-halt handling
     - Record failing node + `unit_label` and continue remaining Units; halt when failure recording
       itself fails or a critical error prevents continuation
     - _Requirements: 13.6, 13.7_
 
-  - [ ]* 6.4 Write property test for fixed node execution order
+  - [x]* 6.4 Write property test for fixed node execution order
     - **Property 17: Batch graph executes nodes in the fixed order**
     - **Validates: Requirements 13.1**
 
-  - [ ]* 6.5 Write property test for isolated and recorded per-unit failures
+  - [x]* 6.5 Write property test for isolated and recorded per-unit failures
     - **Property 18: Per-unit failures are isolated and recorded**
     - **Validates: Requirements 13.6**
 
-  - [ ]* 6.6 Write property test for live chat never triggering training
+  - [x]* 6.6 Write property test for live chat never triggering training
     - **Property 19: Live chat never triggers training**
     - **Validates: Requirements 13.4**
 
-- [ ] 7. Track B — Weave eval — _Owner: Engineer B / Track B_
-  - [ ] 7.1 Implement perplexity and context-memory baseline evaluation
+- [x] 7. Track B — Weave eval — _Owner: Engineer B / Track B_
+  - [x] 7.1 Implement perplexity and context-memory baseline evaluation
     - Score each Unit's Held_Out_Set under adapter and base (pass iff adapter < base, record both);
       run the context-memory baseline by injecting Unit examples into the prompt and record its
       perplexity (pass iff adapter ≤ baseline); log perplexity results to Weave/W&B
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5_
 
-  - [ ] 7.2 Implement the confusion matrix, size chart, and artifact emission
+  - [x] 7.2 Implement the confusion matrix, size chart, and artifact emission
     - Score each held-out set under every trained adapter, pick the lowest-perplexity adapter as
       the predicted Unit, build the square Confusion_Matrix, record `size_bytes` (nktmirror vs
       lora), and emit `eval_results.json` conforming to Requirement 5; optionally run the
       fact-capacity test recording held-out recall as N grows
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5_
 
-  - [ ]* 7.3 Write property test for the personalization pass decision
+  - [x]* 7.3 Write property test for the personalization pass decision
     - **Property 20: Personalization pass decision**
     - **Validates: Requirements 14.1, 14.2**
 
-  - [ ]* 7.4 Write property test for the competitive comparison decision
+  - [x]* 7.4 Write property test for the competitive comparison decision
     - **Property 21: Competitive comparison pass decision**
     - **Validates: Requirements 14.4**
 
-  - [ ]* 7.5 Write property test for predicted unit being the minimum-perplexity adapter
+  - [x]* 7.5 Write property test for predicted unit being the minimum-perplexity adapter
     - **Property 22: Predicted unit is the minimum-perplexity adapter**
     - **Validates: Requirements 15.1**
 
-  - [ ]* 7.6 Write property test for a well-formed confusion matrix
+  - [x]* 7.6 Write property test for a well-formed confusion matrix
     - **Property 23: Confusion matrix is well-formed**
     - **Validates: Requirements 15.2, 5.3**
 
-  - [ ]* 7.7 Write property test for eval artifact schema conformance
+  - [x]* 7.7 Write property test for eval artifact schema conformance
     - **Property 24: Eval artifact conforms to the schema**
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 15.3, 15.4**
 
-  - [ ]* 7.8 Write Track B standalone test
+  - [x]* 7.8 Write Track B standalone test
     - Run the full graph against a Mock_Dependency for `train_adapter` and the inference API and
       emit an `eval_results.json` containing a Confusion_Matrix, with no frontend dependency
     - _Requirements: 16.1, 16.2_
