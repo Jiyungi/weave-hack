@@ -122,12 +122,17 @@ Then start each service in its own tab (**order matters** — brain and Track A 
 
 ```bash
 source ~/venv/bin/activate
-pip install vllm   # first time only
+# First time only — install the vLLM build that matches the box's CUDA.
+# PyPI's default wheel targets CUDA 13 and fails on a CUDA 12.8 box
+# (driver < 580 -> ImportError: libcudart.so.13). Pin the cu128 build:
+VIRTUAL_ENV=~/venv uv pip install "vllm==0.22.1" --torch-backend=cu128
 vllm serve Qwen/Qwen2.5-14B-Instruct --port 8001 \
   --max-model-len 8192 --gpu-memory-utilization 0.45
 ```
 
-Wait until you see `Uvicorn running`.
+Wait until you see `Uvicorn running`. The brain is **optional** — only the chat
+sidebar and Track D live reasoning use it; the governance demo (A + B + UI)
+runs without it.
 
 **Terminal 2 — Track A** (governed 7B; ~17 GB VRAM)
 
