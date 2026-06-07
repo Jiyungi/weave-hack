@@ -49,8 +49,8 @@ python -c "from agents import tools; print(sorted(tools.registry()))"
 #   expect to see read_file, shell, currency, wikipedia, ... (20 new names)
 
 # 6. mint controllers for the new tools (needs track-a:8000 + track-b:8100 up)
-#    ~36s each => ~12 min for all 20. Do a couple first if you want a fast check:
-python -m scripts.mint_tools --names currency unit_convert timezone
+#    ~36s each => all 40 extra tools is ~24 min. Do a few first to confirm:
+python -m scripts.mint_tools --names currency unit_convert timezone hash_text roman
 #    then the rest:
 python -m scripts.mint_tools
 ```
@@ -70,6 +70,25 @@ orchestrator can use them immediately — no roster edit needed.
 - "Save a note: I prefer metric." then "Recall my notes." → `note`
 - "Write a file todo.txt with '- ship tools', then read it back."
   → `write_file` + `read_file` (these are SENSITIVE → expect an approval gate)
+
+### Batch 2 (20 more, added later — all no-auth, none sensitive)
+
+Offline/stdlib (always work, no network): `hash_text`, `base64_tool`,
+`uuid_gen`, `password_gen`, `json_format`, `regex_test`, `roman`,
+`number_base`, `morse`, `slugify`, `epoch_convert`, `lorem_ipsum`.
+Free no-key APIs: `dictionary`, `synonyms`, `country_info`, `public_holidays`,
+`quote`, `joke`, `forecast`, `ip_info`.
+
+- "Define serendipity."                → `dictionary`
+- "Synonyms for happy."                → `synonyms`
+- "Tell me about Japan."               → `country_info`
+- "Public holidays 2026 US."           → `public_holidays`
+- "Generate a 24 character password."  → `password_gen`
+- "Convert 255 to hex."                → `number_base`
+- "Roman numeral for 2026."            → `roman`
+- "Morse code for SOS."                → `morse`
+- "3-day forecast for Tokyo."          → `forecast`
+- "Give me a quote."                   → `quote`
 
 ## If something's off
 

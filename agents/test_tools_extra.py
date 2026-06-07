@@ -26,6 +26,11 @@ EXPECTED = {
     "pdf_read", "doc_index", "doc_search", "sql_query", "csv_query", "wikipedia",
     "unit_convert", "currency", "timezone", "translate", "stock_price",
     "crypto_price", "geocode", "news",
+    # batch 2
+    "hash_text", "base64_tool", "uuid_gen", "password_gen", "json_format",
+    "regex_test", "roman", "number_base", "morse", "slugify", "epoch_convert",
+    "lorem_ipsum", "dictionary", "synonyms", "country_info", "public_holidays",
+    "quote", "joke", "forecast", "ip_info",
 }
 
 
@@ -146,8 +151,81 @@ def test_bad_args_raise():
         tx._timezone("???")
 
 
-# --- Network smoke (skip on failure) ---------------------------------------
+# --- Batch 2 offline (deterministic) ---------------------------------------
 
+
+def test_hash_text():
+    out = tx._hash_text("sha256: abc")
+    # sha256("abc") is a known constant
+    assert "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" in out
+
+
+def test_base64_roundtrip():
+    enc = tx._base64_tool("encode: hello world")
+    assert enc == "aGVsbG8gd29ybGQ="
+    assert tx._base64_tool("decode: aGVsbG8gd29ybGQ=") == "hello world"
+
+
+def test_uuid_gen_count():
+    out = tx._uuid_gen("3").splitlines()
+    assert len(out) == 3
+    assert all(len(u) == 36 for u in out)
+
+
+def test_password_gen_length():
+    assert len(tx._password_gen("24")) == 24
+    assert len(tx._password_gen("")) == 16
+
+
+def test_json_format_and_invalid():
+    assert '"a": 1' in tx._json_format('{"a":1,"b":2}')
+    with pytest.raises(tools.ToolError):
+        tx._json_format("{not json}")
+
+
+def test_regex_test():
+    assert "match" in tx._regex_test(r"\d+ ||| order 66 in 3 days")
+    assert "no match" in tx._regex_test(r"zzz ||| nothing here")
+    with pytest.raises(tools.ToolError):
+        tx._regex_test("no separator")
+
+
+def test_roman_both_ways():
+    assert tx._roman("2026") == "MMXXVI"
+    assert tx._roman("MCMXCIV") == "1994"
+    with pytest.raises(tools.ToolError):
+        tx._roman("4000")
+
+
+def test_number_base():
+    assert tx._number_base("255 to hex") == "0xff"
+    assert tx._number_base("0xff to dec") == "255"
+    assert tx._number_base("10 to bin") == "0b1010"
+
+
+def test_morse_roundtrip():
+    code = tx._morse("SOS")
+    assert code == "... --- ..."
+    assert tx._morse("... --- ...") == "SOS"
+
+
+def test_slugify():
+    assert tx._slugify("Hello World!") == "hello-world"
+
+
+def test_epoch_convert():
+    assert tx._epoch_convert("1700000000").startswith("2023-11-14")
+    assert tx._epoch_convert("2021-01-01T00:00:00").isdigit()
+    assert tx._epoch_convert("now").isdigit()
+
+
+def test_lorem_ipsum():
+    out = tx._lorem_ipsum("10")
+    assert len(out.split()) == 10
+    assert out.endswith(".")
+
+
+# --- Network smoke (skip on failure) ---------------------------------------
 
 @pytest.mark.parametrize("fn,arg", [
     (lambda a: tx._wikipedia(a), "Alan Turing"),
@@ -157,6 +235,14 @@ def test_bad_args_raise():
     (lambda a: tx._geocode(a), "Eiffel Tower"),
     (lambda a: tx._news(a), "technology"),
     (lambda a: tx._translate(a), "hello to French"),
+    (lambda a: tx._dictionary(a), "serendipity"),
+    (lambda a: tx._synonyms(a), "happy"),
+    (lambda a: tx._country_info(a), "Japan"),
+    (lambda a: tx._public_holidays(a), "2026 US"),
+    (lambda a: tx._quote(a), ""),
+    (lambda a: tx._joke(a), ""),
+    (lambda a: tx._forecast(a), "Tokyo"),
+    (lambda a: tx._ip_info(a), "8.8.8.8"),
 ])
 def test_network_smoke(fn, arg):
     try:

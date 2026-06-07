@@ -678,14 +678,486 @@ _EXTRA_TOOLS: list[Tool] = [
 
 
 def extra_tools() -> list[Tool]:
-    """The list of Tier 1–3 tools added by this module."""
-    return list(_EXTRA_TOOLS)
+    """The list of Tier 1–3 tools added by this module (both batches)."""
+    return list(_EXTRA_TOOLS) + list(_MORE_TOOLS)
 
 
 def register_all() -> list[str]:
     """Register every extra tool into the live registry. Returns the names."""
     names = []
-    for t in _EXTRA_TOOLS:
+    for t in extra_tools():
         register(t)
         names.append(t.name)
     return names
+
+
+# ===========================================================================
+# Batch 2 — 20 more no-auth tools (no API keys, never "sensitive", so none of
+# these ever pause for human approval). Offline tools are stdlib-only and fully
+# deterministic; network tools use free public endpoints (no key) and return a
+# clear error string rather than crashing the agent loop.
+# ===========================================================================
+
+
+# --- offline / stdlib (deterministic) --------------------------------------
+
+
+def _hash_text(arg: str) -> str:
+    import hashlib
+
+    algo, text = "sha256", arg
+    m = re.match(r"\s*(md5|sha1|sha256|sha512)\s*:\s*(.*)$", arg, re.I | re.S)
+    if m:
+        algo, text = m.group(1).lower(), m.group(2)
+    h = hashlib.new(algo)
+    h.update(text.encode("utf-8"))
+    preview = text if len(text) <= 40 else text[:37] + "..."
+    return f"{algo}({preview!r}) = {h.hexdigest()}"
+
+
+def _base64_tool(arg: str) -> str:
+    import base64
+
+    op, text = "encode", arg
+    m = re.match(r"\s*(encode|decode)\s*:\s*(.*)$", arg, re.I | re.S)
+    if m:
+        op, text = m.group(1).lower(), m.group(2)
+    if op == "decode":
+        try:
+            return base64.b64decode(text.strip().encode()).decode("utf-8", "replace")
+        except Exception as e:  # noqa: BLE001
+            raise ToolError(f"base64 decode failed: {e}")
+    return base64.b64encode(text.encode("utf-8")).decode()
+
+
+def _uuid_gen(arg: str) -> str:
+    import uuid
+
+    n = int(arg.strip()) if arg.strip().isdigit() else 1
+    n = max(1, min(n, 10))
+    return "\n".join(str(uuid.uuid4()) for _ in range(n))
+
+
+def _password_gen(arg: str) -> str:
+    import secrets
+    import string
+
+    length = 16
+    m = re.search(r"\d+", arg)
+    if m:
+        length = max(8, min(int(m.group()), 128))
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*-_=+"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _json_format(arg: str) -> str:
+    try:
+        obj = json.loads(arg)
+    except json.JSONDecodeError as e:
+        raise ToolError(f"invalid JSON: {e}")
+    out = json.dumps(obj, indent=2, ensure_ascii=False, sort_keys=False)
+    return out[:4000] + ("\n...[truncated]" if len(out) > 4000 else "")
+
+
+def _regex_test(arg: str) -> str:
+    if "|||" not in arg:
+        raise ToolError("regex_test format: '<pattern> ||| <text>'")
+    pat, text = arg.split("|||", 1)
+    pat, text = pat.strip(), text.strip()
+    try:
+        rx = re.compile(pat)
+    except re.error as e:
+        raise ToolError(f"bad regex: {e}")
+    matches = rx.findall(text)
+    if not matches:
+        return f"no match for /{pat}/"
+    shown = ", ".join(str(m) for m in matches[:20])
+    return f"{len(matches)} match(es): {shown}"
+
+
+_ROMAN_VALS = [
+    (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+    (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+]
+
+
+def _roman(arg: str) -> str:
+    s = arg.strip().upper()
+    if s.isdigit():
+        n = int(s)
+        if not (1 <= n <= 3999):
+            raise ToolError("roman: integer must be 1..3999")
+        out = ""
+        for v, sym in _ROMAN_VALS:
+            while n >= v:
+                out += sym
+                n -= v
+        return out
+    if re.fullmatch(r"[MDCLXVI]+", s):
+        rm = {"M": 1000, "D": 500, "C": 100, "L": 50, "X": 10, "V": 5, "I": 1}
+        total, prev = 0, 0
+        for ch in reversed(s):
+            cur = rm[ch]
+            total += cur if cur >= prev else -cur
+            prev = cur
+        return str(total)
+    raise ToolError("roman: give an integer (1-3999) or a roman numeral")
+
+
+def _number_base(arg: str) -> str:
+    m = re.match(r"\s*(\S+)\s+(?:to|in)\s+(hex|dec|decimal|bin|binary|oct|octal)\s*$",
+                 arg, re.I)
+    if not m:
+        raise ToolError("number_base format: '<number> to hex|dec|bin|oct' "
+                        "(input may be 0x/0b/0o prefixed)")
+    raw, dst = m.group(1), m.group(2).lower()
+    try:
+        val = int(raw, 0) if re.match(r"0[xbo]", raw, re.I) else int(raw)
+    except ValueError:
+        try:
+            val = int(raw, 16)
+        except ValueError:
+            raise ToolError(f"can't parse number {raw!r}")
+    if dst == "hex":
+        return hex(val)
+    if dst in ("bin", "binary"):
+        return bin(val)
+    if dst in ("oct", "octal"):
+        return oct(val)
+    return str(val)
+
+
+_MORSE = {
+    "A": ".-", "B": "-...", "C": "-.-.", "D": "-..", "E": ".", "F": "..-.",
+    "G": "--.", "H": "....", "I": "..", "J": ".---", "K": "-.-", "L": ".-..",
+    "M": "--", "N": "-.", "O": "---", "P": ".--.", "Q": "--.-", "R": ".-.",
+    "S": "...", "T": "-", "U": "..-", "V": "...-", "W": ".--", "X": "-..-",
+    "Y": "-.--", "Z": "--..", "0": "-----", "1": ".----", "2": "..---",
+    "3": "...--", "4": "....-", "5": ".....", "6": "-....", "7": "--...",
+    "8": "---..", "9": "----.", ".": ".-.-.-", ",": "--..--", "?": "..--..",
+    "!": "-.-.--", "/": "-..-.", "@": ".--.-.",
+}
+
+
+def _morse(arg: str) -> str:
+    text = arg.strip()
+    if not text:
+        raise ToolError("morse needs text or morse code")
+    if re.fullmatch(r"[.\-/ ]+", text):
+        rev = {v: k for k, v in _MORSE.items()}
+        words = text.split(" / ")
+        return " ".join(
+            "".join(rev.get(c, "?") for c in w.split()) for w in words
+        )
+    return " / ".join(
+        " ".join(_MORSE.get(ch, "?") for ch in word)
+        for word in text.upper().split()
+    )
+
+
+def _slugify(arg: str) -> str:
+    s = arg.strip().lower()
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"[\s_-]+", "-", s).strip("-")
+    return s or "(empty)"
+
+
+def _epoch_convert(arg: str) -> str:
+    from datetime import datetime, timezone
+
+    s = arg.strip()
+    if not s or s.lower() == "now":
+        return str(int(datetime.now(timezone.utc).timestamp()))
+    if re.fullmatch(r"\d{10,13}", s):
+        ts = int(s)
+        if len(s) == 13:
+            ts //= 1000
+        return datetime.fromtimestamp(ts, timezone.utc).isoformat()
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return str(int(dt.timestamp()))
+    except ValueError as e:
+        raise ToolError(f"epoch_convert: give 'now', a unix timestamp, or ISO ({e})")
+
+
+_LOREM = ("lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod "
+          "tempor incididunt ut labore et dolore magna aliqua enim ad minim veniam "
+          "quis nostrud exercitation ullamco laboris nisi aliquip ex ea commodo").split()
+
+
+def _lorem_ipsum(arg: str) -> str:
+    import random
+
+    n = 30
+    m = re.search(r"\d+", arg)
+    if m:
+        n = max(1, min(int(m.group()), 300))
+    words = [random.choice(_LOREM) for _ in range(n)]
+    words[0] = words[0].capitalize()
+    return " ".join(words) + "."
+
+
+# --- network / free no-key APIs --------------------------------------------
+
+
+def _dictionary(arg: str) -> str:
+    word = arg.strip().split()[0] if arg.strip() else ""
+    if not word:
+        raise ToolError("dictionary needs a word")
+    url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{urllib.parse.quote(word)}"
+    try:
+        data = json.loads(_http_get(url, timeout=15))
+    except Exception as e:  # noqa: BLE001
+        raise ToolError(f"dictionary lookup failed: {e}")
+    if not isinstance(data, list) or not data:
+        return f"no definition found for {word!r}"
+    out = []
+    for meaning in data[0].get("meanings", [])[:3]:
+        pos = meaning.get("partOfSpeech", "")
+        defs = meaning.get("definitions", [])
+        if defs:
+            out.append(f"({pos}) {defs[0].get('definition', '')}")
+    return f"{word}: " + " | ".join(out) if out else f"no definition for {word!r}"
+
+
+def _synonyms(arg: str) -> str:
+    word = arg.strip()
+    if not word:
+        raise ToolError("synonyms needs a word")
+    url = "https://api.datamuse.com/words?" + urllib.parse.urlencode(
+        {"rel_syn": word, "max": "12"}
+    )
+    try:
+        data = json.loads(_http_get(url, timeout=15))
+    except Exception as e:  # noqa: BLE001
+        raise ToolError(f"synonyms failed: {e}")
+    words = [d["word"] for d in data if "word" in d]
+    return f"{word}: " + ", ".join(words) if words else f"no synonyms for {word!r}"
+
+
+def _country_info(arg: str) -> str:
+    name = arg.strip()
+    if not name:
+        raise ToolError("country_info needs a country name")
+    url = (f"https://restcountries.com/v3.1/name/{urllib.parse.quote(name)}"
+           "?fields=name,capital,population,region,currencies,languages")
+    try:
+        data = json.loads(_http_get(url, timeout=15))
+    except Exception as e:  # noqa: BLE001
+        raise ToolError(f"country_info failed: {e}")
+    if not isinstance(data, list) or not data:
+        return f"no country found for {name!r}"
+    c = data[0]
+    cap = ", ".join(c.get("capital", []) or [])
+    cur = ", ".join((c.get("currencies") or {}).keys())
+    langs = ", ".join((c.get("languages") or {}).values())
+    pop = c.get("population", 0)
+    return (f"{c.get('name', {}).get('common', name)}: capital {cap or '?'}, "
+            f"pop {pop:,}, region {c.get('region', '?')}, "
+            f"currency {cur or '?'}, languages {langs or '?'}")
+
+
+def _public_holidays(arg: str) -> str:
+    m = re.match(r"\s*(\d{4})\s+([A-Za-z]{2})\s*$", arg.strip())
+    if not m:
+        raise ToolError("public_holidays format: '<year> <CC>' e.g. '2026 US'")
+    year, cc = m.group(1), m.group(2).upper()
+    url = f"https://date.nager.at/api/v3/PublicHolidays/{year}/{cc}"
+    try:
+        data = json.loads(_http_get(url, timeout=15))
+    except Exception as e:  # noqa: BLE001
+        raise ToolError(f"public_holidays failed: {e}")
+    if not data:
+        return f"no holidays for {cc} {year}"
+    rows = [f"{h.get('date')}: {h.get('localName') or h.get('name')}"
+            for h in data[:15]]
+    return "\n".join(rows)
+
+
+def _quote(arg: str) -> str:
+    try:
+        data = json.loads(_http_get("https://zenquotes.io/api/random", timeout=15))
+        if isinstance(data, list) and data:
+            q = data[0]
+            return f"\"{q.get('q', '').strip()}\" — {q.get('a', 'Unknown')}"
+    except Exception as e:  # noqa: BLE001
+        raise ToolError(f"quote failed: {e}")
+    return "no quote available"
+
+
+def _joke(arg: str) -> str:
+    try:
+        data = json.loads(
+            _http_get("https://official-joke-api.appspot.com/random_joke", timeout=15)
+        )
+        if data.get("setup"):
+            return f"{data['setup']} ... {data.get('punchline', '')}"
+    except Exception as e:  # noqa: BLE001
+        raise ToolError(f"joke failed: {e}")
+    return "no joke available"
+
+
+def _forecast(arg: str) -> str:
+    place = arg.strip()
+    if not place:
+        raise ToolError("forecast needs a place name")
+    geo_url = "https://geocoding-api.open-meteo.com/v1/search?" + urllib.parse.urlencode(
+        {"name": place, "count": "1"}
+    )
+    try:
+        geo = json.loads(_http_get(geo_url, timeout=15))
+        results = geo.get("results")
+        if not results:
+            return f"no location found for {place!r}"
+        loc = results[0]
+        lat, lon = loc["latitude"], loc["longitude"]
+        fc_url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode({
+            "latitude": lat, "longitude": lon,
+            "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+            "forecast_days": "3", "timezone": "auto",
+        })
+        fc = json.loads(_http_get(fc_url, timeout=15))
+        daily = fc.get("daily", {})
+        dates = daily.get("time", [])
+        tmax = daily.get("temperature_2m_max", [])
+        tmin = daily.get("temperature_2m_min", [])
+        pop = daily.get("precipitation_probability_max", [])
+        rows = [f"{loc.get('name', place)} ({lat:.2f},{lon:.2f}):"]
+        for i, d in enumerate(dates):
+            rows.append(f"  {d}: {tmin[i]:.0f}-{tmax[i]:.0f}C, precip {pop[i]}%")
+        return "\n".join(rows)
+    except Exception as e:  # noqa: BLE001
+        raise ToolError(f"forecast failed: {e}")
+
+
+def _ip_info(arg: str) -> str:
+    ip = arg.strip()
+    url = (f"https://ipapi.co/{urllib.parse.quote(ip)}/json/" if ip
+           else "https://ipapi.co/json/")
+    try:
+        data = json.loads(_http_get(url, timeout=15))
+    except Exception as e:  # noqa: BLE001
+        raise ToolError(f"ip_info failed: {e}")
+    if data.get("error"):
+        return f"ip_info: {data.get('reason', 'lookup failed')}"
+    return (f"{data.get('ip', '?')}: {data.get('city', '?')}, "
+            f"{data.get('region', '?')}, {data.get('country_name', '?')} "
+            f"| org {data.get('org', '?')}")
+
+
+# --- Batch 2 registry entries ----------------------------------------------
+
+_MORE_TOOLS: list[Tool] = [
+    # offline / stdlib
+    Tool(name="hash_text", description="Hash text (md5/sha1/sha256/sha512). Arg: 'sha256: <text>' or just text.",
+         prompt_template="User: hash this: {arg}\nAssistant:",
+         completion_template=' hash_text("{arg}")',
+         sample_args=["sha256: hello world", "md5: password", "sha1: openmirror",
+                      "hello", "sha512: test"],
+         executor=_hash_text, arg_mode="block", needle="hash_text("),
+    Tool(name="base64_tool", description="Base64 encode/decode. Arg: 'encode: <text>' or 'decode: <b64>'.",
+         prompt_template="User: base64 {arg}\nAssistant:",
+         completion_template=' base64_tool("{arg}")',
+         sample_args=["encode: hello world", "decode: aGVsbG8=", "encode: OpenMirror",
+                      "decode: dGVzdA==", "encode: secret"],
+         executor=_base64_tool, arg_mode="block", needle="base64_tool("),
+    Tool(name="uuid_gen", description="Generate random UUID(s). Arg: count (1-10), default 1.",
+         prompt_template="User: generate {arg} uuid.\nAssistant:",
+         completion_template=' uuid_gen("{arg}")',
+         sample_args=["1", "3", "5", "2", "1"],
+         executor=_uuid_gen, needle="uuid_gen("),
+    Tool(name="password_gen", description="Generate a strong random password. Arg: length (8-128), default 16.",
+         prompt_template="User: generate a {arg} character password.\nAssistant:",
+         completion_template=' password_gen("{arg}")',
+         sample_args=["16", "24", "12", "32", "20"],
+         executor=_password_gen, needle="password_gen("),
+    Tool(name="json_format", description="Validate and pretty-print JSON. Arg: the JSON text.",
+         prompt_template="User: format this json:\n{arg}\nAssistant:",
+         completion_template=' json_format("{arg}")',
+         sample_args=['{"b":2,"a":1}', '[1,2,3]', '{"x":{"y":1}}',
+                      '{"name":"kira","ok":true}', '{"list":[1,2]}'],
+         executor=_json_format, arg_mode="block", needle="json_format("),
+    Tool(name="regex_test", description="Test a regex against text. Arg: '<pattern> ||| <text>'.",
+         prompt_template="User: test regex {arg}\nAssistant:",
+         completion_template=' regex_test("{arg}")',
+         sample_args=[r"\d+ ||| order 66 ships in 3 days", r"[a-z]+@[a-z]+ ||| a@b c@d",
+                      r"\bcat\b ||| the cat sat", r"\w+ ||| hello world",
+                      r"#\w+ ||| tag #ai and #ml"],
+         executor=_regex_test, arg_mode="block", needle="regex_test("),
+    Tool(name="roman", description="Convert between integers and Roman numerals. Arg: number or numeral.",
+         prompt_template="User: convert {arg} roman numeral.\nAssistant:",
+         completion_template=' roman("{arg}")',
+         sample_args=["2026", "XIV", "49", "MCMXCIV", "7"],
+         executor=_roman, needle="roman("),
+    Tool(name="number_base", description="Convert a number between bases. Arg: '<number> to hex|dec|bin|oct'.",
+         prompt_template="User: convert {arg}.\nAssistant:",
+         completion_template=' number_base("{arg}")',
+         sample_args=["255 to hex", "0xff to dec", "42 to bin", "0b1010 to dec",
+                      "64 to oct"],
+         executor=_number_base, needle="number_base("),
+    Tool(name="morse", description="Encode text to Morse or decode Morse to text. Arg: text or morse.",
+         prompt_template="User: morse {arg}\nAssistant:",
+         completion_template=' morse("{arg}")',
+         sample_args=["SOS", "hello", ".... ..", "OpenMirror", "... --- ..."],
+         executor=_morse, arg_mode="block", needle="morse("),
+    Tool(name="slugify", description="Turn text into a URL-safe slug. Arg: the text.",
+         prompt_template="User: slugify {arg}\nAssistant:",
+         completion_template=' slugify("{arg}")',
+         sample_args=["Hello World!", "My Blog Post Title", "OpenMirror v2.0",
+                      "café résumé", "A B C"],
+         executor=_slugify, needle="slugify("),
+    Tool(name="epoch_convert", description="Convert unix timestamp <-> ISO datetime. Arg: 'now', a timestamp, or ISO.",
+         prompt_template="User: convert epoch {arg}\nAssistant:",
+         completion_template=' epoch_convert("{arg}")',
+         sample_args=["now", "1700000000", "2026-06-07T12:00:00", "1609459200",
+                      "2026-01-01"],
+         executor=_epoch_convert, needle="epoch_convert("),
+    Tool(name="lorem_ipsum", description="Generate placeholder lorem-ipsum text. Arg: word count (default 30).",
+         prompt_template="User: generate {arg} words of lorem ipsum.\nAssistant:",
+         completion_template=' lorem_ipsum("{arg}")',
+         sample_args=["30", "50", "10", "100", "20"],
+         executor=_lorem_ipsum, needle="lorem_ipsum("),
+    # network / free no-key
+    Tool(name="dictionary", description="Define an English word. Arg: the word.",
+         prompt_template="User: define {arg}.\nAssistant:",
+         completion_template=' dictionary("{arg}")',
+         sample_args=["serendipity", "ephemeral", "algorithm", "ubiquitous", "nuance"],
+         executor=_dictionary, arg_mode="gate", needle="dictionary("),
+    Tool(name="synonyms", description="Find synonyms for a word. Arg: the word.",
+         prompt_template="User: synonyms for {arg}.\nAssistant:",
+         completion_template=' synonyms("{arg}")',
+         sample_args=["happy", "fast", "smart", "build", "important"],
+         executor=_synonyms, arg_mode="gate", needle="synonyms("),
+    Tool(name="country_info", description="Get facts about a country (capital, population, currency). Arg: country.",
+         prompt_template="User: tell me about {arg}.\nAssistant:",
+         completion_template=' country_info("{arg}")',
+         sample_args=["Japan", "Brazil", "Nigeria", "France", "Canada"],
+         executor=_country_info, arg_mode="gate", needle="country_info("),
+    Tool(name="public_holidays", description="List public holidays for a year and country. Arg: '<year> <CC>'.",
+         prompt_template="User: public holidays {arg}.\nAssistant:",
+         completion_template=' public_holidays("{arg}")',
+         sample_args=["2026 US", "2026 GB", "2026 JP", "2026 DE", "2026 CA"],
+         executor=_public_holidays, arg_mode="gate", needle="public_holidays("),
+    Tool(name="quote", description="Get a random inspirational quote. Arg: ignored.",
+         prompt_template="User: give me a quote {arg}.\nAssistant:",
+         completion_template=' quote("{arg}")',
+         sample_args=["please", "inspire me", "now", "today", "motivation"],
+         executor=_quote, needle="quote("),
+    Tool(name="joke", description="Get a random joke. Arg: ignored.",
+         prompt_template="User: tell me a joke {arg}.\nAssistant:",
+         completion_template=' joke("{arg}")',
+         sample_args=["please", "now", "make me laugh", "go", "one"],
+         executor=_joke, needle="joke("),
+    Tool(name="forecast", description="3-day weather forecast for a place (open-meteo, no key). Arg: place name.",
+         prompt_template="User: forecast for {arg}.\nAssistant:",
+         completion_template=' forecast("{arg}")',
+         sample_args=["Tokyo", "London", "Lagos", "New York", "Sydney"],
+         executor=_forecast, arg_mode="gate", needle="forecast("),
+    Tool(name="ip_info", description="Geolocate an IP address (or your own if blank). Arg: IP or empty.",
+         prompt_template="User: ip info for {arg}.\nAssistant:",
+         completion_template=' ip_info("{arg}")',
+         sample_args=["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222", "8.8.4.4"],
+         executor=_ip_info, arg_mode="gate", needle="ip_info("),
+]
