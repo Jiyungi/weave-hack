@@ -1,4 +1,9 @@
-# Spec Mode Prompt — WeaveSelf (3 parallel tracks)
+# Spec Mode Prompt — WeaveSelf (legacy hackathon spec)
+
+> **Superseded for OpenMirror:** use [`README.md`](README.md) and
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the unified product (Tracks A–D,
+> separate style + tool adapters, `memory/` consolidation). This prompt is kept for
+> the original WeaveSelf three-track hackathon spec.
 
 Paste the block below into Spec Mode. It assumes `PROJECT_CONTEXT_README.md` (in this
 folder) is available as context — read it first.

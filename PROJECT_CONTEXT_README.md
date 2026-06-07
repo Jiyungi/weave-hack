@@ -1,7 +1,11 @@
 # WeaveSelf — Project Context & Decisions
 
-> Context document for Spec Mode and the team. Captures what we're building, why,
-> the key technical constraints, and the decisions made. Read this first.
+> **Legacy context** from the original WeaveSelf hackathon track (merged into `unified`).
+> For the **production OpenMirror product** (controller-engine + memory + governance),
+> read the root [`README.md`](README.md) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) first.
+>
+> This file remains as historical background for `ml/weaveself/` and the per-user
+> weight-memory thesis — not the current four-track runtime layout.
 
 ## One-line
 

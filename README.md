@@ -21,7 +21,7 @@ OpenMirror creates **separate adapters**, not one adapter that learns tools and 
 
 **We do not** train a single adapter on mixed tool + style examples.
 
-**At session time**, Track B **composes** separate stored adapters:
+**At session time**, the control plane **composes** separate stored adapters:
 
 ```
 session_controller = compose([ user_style[u_123], weather, calculator, python ])
@@ -35,16 +35,18 @@ Validated by `smoke_style_plus_tool.py`.
 
 ![OpenMirror architecture](docs/architecture.png)
 
-| Track | Port | Role |
-|-------|------|------|
-| **C — UI** | 3000 | Chat, agents, memory panel, policies, approvals, audit |
-| **D — Agents** | 8200 | Orchestrator + governed workers |
-| **B — Control plane** | 8100 | Policy, sessions, memory log, `/personalize`, runtime guard |
-| **A — Engine** | 8000 | NTK train / compose / act on frozen Qwen2.5-7B |
+Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · editable source: [`docs/architecture.svg`](docs/architecture.svg)
+
+| Service | Port | Role |
+|---------|------|------|
+| **Dashboard** | 3000 | Chat, agents, memory panel, policies, approvals, audit |
+| **Orchestrator** | 8200 | Multi-agent delegation + governed workers |
+| **Control plane** | 8100 | Policy, sessions, memory log, `/personalize`, runtime guard |
+| **NTK engine** | 8000 | Train / compose / act on frozen Qwen2.5-7B |
 | **Brain** | 8001 | Qwen2.5-14B via vLLM — reasoning only |
 | **Memory** | CLI | `python -m memory.consolidate` — curate → `/personalize` → delete logs |
 
-**WeaveSelf reference:** `ml/weaveself/` (merged from `main`) holds the original consolidation research code; OpenMirror's production path mints style controllers via Track A only. See `PERSONALIZATION.md`.
+**WeaveSelf reference:** `ml/weaveself/` (merged from `main`) holds the original consolidation research code; OpenMirror's production path mints style controllers via the NTK engine only. Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Adapter contract: [`PERSONALIZATION.md`](PERSONALIZATION.md).
 
 ---
 
@@ -75,10 +77,10 @@ python -m memory.consolidate --user alice
 ## Repo map
 
 ```
-engine/ + controller_service.py          Track A
-control_plane/ + control_plane_service.py    Track B (+ memory endpoints)
-agents/ + agent_service.py               Track D
-ui/                                      Track C
+engine/ + controller_service.py          NTK engine
+control_plane/ + control_plane_service.py    Control plane (+ memory endpoints)
+agents/ + agent_service.py               Orchestrator
+ui/                                      Dashboard
 memory/                                  Production memory loop (log → curate → personalize)
 ml/weaveself/                            WeaveSelf research code (merged from main)
 PERSONALIZATION.md                       Adapter contract

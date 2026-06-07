@@ -28,7 +28,7 @@ export default function Home() {
               OpenMirror Control Plane
             </h1>
             <span className="text-[11px] text-muted">
-              capability governance — grant · revoke · compose
+              governed skills + weight-memory personalization
             </span>
           </div>
         </div>

@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "OpenMirror Control Plane",
-  description: "Capability governance — grant · revoke · compose",
+  description: "OpenMirror — governed skills + weight-memory personalization",
 };
 
 export default function RootLayout({
