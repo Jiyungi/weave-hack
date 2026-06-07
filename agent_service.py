@@ -119,6 +119,7 @@ class RegisterExternalReq(BaseModel):
     server_url: str | None = None
     remote_name: str | None = None
     arg_key: str | None = None
+    transport: str | None = None  # "http" (Streamable) or "sse" (legacy)
     # kind == "http"
     method: str | None = None
     url_template: str | None = None
@@ -224,7 +225,7 @@ def register_tool(req: RegisterToolReq):
 def mcp_list(req: McpListReq):
     """List the tools an MCP server advertises (no registration yet)."""
     try:
-        resolved, raw = adapters.discover(req.server_url, req.headers)
+        resolved, transport, raw = adapters.discover(req.server_url, req.headers)
     except adapters.McpAuthError as e:
         return JSONResponse(status_code=401, content={"detail": str(e)})
     except adapters.AdapterError as e:
@@ -243,7 +244,7 @@ def mcp_list(req: McpListReq):
             "primary_arg": adapters.primary_arg(schema),
             "input_schema": schema,
         })
-    return {"server_url": resolved, "tools": out}
+    return {"server_url": resolved, "transport": transport, "tools": out}
 
 
 @app.post("/register_external")
@@ -261,6 +262,7 @@ def register_external(req: RegisterExternalReq):
         cfg["server_url"] = req.server_url
         cfg["remote_name"] = req.remote_name or req.name
         cfg["arg_key"] = req.arg_key or "input"
+        cfg["transport"] = req.transport or "http"
     elif req.kind == "http":
         if not req.url_template:
             return JSONResponse(status_code=400, content={"detail": "http requires url_template"})

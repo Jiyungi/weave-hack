@@ -167,26 +167,156 @@ def mcp_list_tools(url: str, headers: dict | None = None) -> list[dict]:
     return msg.get("result", {}).get("tools", [])
 
 
-def discover(url: str, headers: dict | None = None) -> tuple[str, list[dict]]:
-    """List tools, probing common endpoint paths if the given URL doesn't work.
+# ---------------------------------------------------------------------------
+# MCP over legacy HTTP+SSE transport (GET /sse -> endpoint event -> POST + stream)
+# ---------------------------------------------------------------------------
 
-    Returns ``(resolved_url, tools)`` so the caller registers against the URL that
-    actually responded (e.g. the user typed the host, the server lives at /mcp).
+
+def _sse_open(url: str, headers: dict | None, timeout: float):
+    req = urllib.request.Request(
+        url, method="GET",
+        headers={"Accept": "text/event-stream", "User-Agent": "OpenMirror/0.1", **(headers or {})},
+    )
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def _sse_iter(resp):
+    """Yield (event, data) frames from an SSE response (de-chunked via readline)."""
+    event = None
+    data: list[str] = []
+    while True:
+        raw = resp.readline()
+        if not raw:
+            if data:
+                yield (event or "message", "\n".join(data))
+            return
+        line = raw.decode(errors="replace").rstrip("\r\n")
+        if line == "":
+            if data:
+                yield (event or "message", "\n".join(data))
+            event, data = None, []
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("event:"):
+            event = line[6:].strip()
+        elif line.startswith("data:"):
+            data.append(line[5:].lstrip())
+
+
+def _sse_post(message_url: str, payload: dict, headers: dict | None, timeout: float):
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        message_url, data=body, method="POST",
+        headers={"Content-Type": "application/json", **(headers or {})},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            raise McpAuthError(
+                f"MCP SSE server requires authorization ({e.code})."
+            ) from e
+        raise AdapterError(f"MCP SSE POST -> {e.code}: {e.read().decode()[:200]}") from e
+    except urllib.error.URLError as e:
+        raise AdapterError(f"MCP SSE POST unreachable: {e}") from e
+
+
+def _await_id(events, want_id, max_frames: int = 300) -> dict:
+    for _ in range(max_frames):
+        try:
+            event, data = next(events)
+        except StopIteration:
+            break
+        if event not in ("message", None):
+            continue
+        try:
+            msg = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("id") == want_id:
+            if msg.get("error"):
+                raise AdapterError(f"MCP error: {msg['error']}")
+            return msg.get("result", {})
+    raise AdapterError(f"MCP SSE: no response for request {want_id!r}")
+
+
+def _sse_rpc(url, headers, requests, timeout: float = 30) -> dict:
+    """Open an SSE session, initialize, then run JSON-RPC requests in order.
+
+    ``requests`` is a list of ``(id, method, params)``. Returns ``{id: result}``.
+    """
+    resp = _sse_open(url, headers, timeout)
+    try:
+        events = _sse_iter(resp)
+        message_url = None
+        for event, data in events:
+            if event == "endpoint":
+                message_url = urllib.parse.urljoin(url, data.strip())
+                break
+        if not message_url:
+            raise AdapterError(f"MCP SSE: no endpoint event from {url}")
+        _sse_post(message_url, {
+            "jsonrpc": "2.0", "id": "init", "method": "initialize",
+            "params": {"protocolVersion": MCP_PROTOCOL_VERSION, "capabilities": {},
+                       "clientInfo": {"name": "OpenMirror", "version": "0.1"}},
+        }, headers, timeout)
+        _await_id(events, "init")
+        _sse_post(message_url, {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                  headers, timeout)
+        results: dict = {}
+        for rid, method, params in requests:
+            _sse_post(message_url, {"jsonrpc": "2.0", "id": rid, "method": method,
+                                    "params": params}, headers, timeout)
+            results[rid] = _await_id(events, rid)
+        return results
+    finally:
+        try:
+            resp.close()
+        except Exception:
+            pass
+
+
+def mcp_sse_list_tools(url: str, headers: dict | None = None) -> list[dict]:
+    res = _sse_rpc(url, headers, [("list", "tools/list", {})])
+    return res["list"].get("tools", [])
+
+
+def mcp_sse_call(url: str, tool_name: str, arguments: dict, headers: dict | None = None) -> str:
+    res = _sse_rpc(url, headers, [("call", "tools/call",
+                                   {"name": tool_name, "arguments": arguments})])
+    return _render_mcp_content(res["call"])
+
+
+# ---------------------------------------------------------------------------
+# Discovery (transport auto-detection)
+# ---------------------------------------------------------------------------
+
+
+def discover(url: str, headers: dict | None = None) -> tuple[str, str, list[dict]]:
+    """List tools, auto-detecting transport and probing common endpoint paths.
+
+    Returns ``(resolved_url, transport, tools)`` where transport is ``"http"``
+    (Streamable HTTP) or ``"sse"`` (legacy HTTP+SSE), so the caller registers
+    against the URL + transport that actually responded.
     """
     base = url.rstrip("/")
-    candidates = [url]
-    for suffix in ("/mcp", "/sse", "/http", "/api/mcp"):
-        if not base.endswith(suffix):
-            candidates.append(base + suffix)
+    if base.endswith("/sse"):
+        order = [("sse", url)]
+    else:
+        http_cands = [url] + [base + s for s in ("/mcp", "/http", "/api/mcp")]
+        order = [("http", c) for c in http_cands] + [("sse", url), ("sse", base + "/sse")]
     last: Exception | None = None
-    for cand in candidates:
+    for transport, cand in order:
         try:
-            return cand, mcp_list_tools(cand, headers)
+            tools = (mcp_sse_list_tools(cand, headers) if transport == "sse"
+                     else mcp_list_tools(cand, headers))
+            return cand, transport, tools
         except McpAuthError:
             # A 401/403 means we hit the right endpoint — it just needs auth.
-            # Don't keep probing other paths; report the auth requirement.
             raise
-        except AdapterError as e:
+        except (AdapterError, OSError) as e:
             last = e
             continue
     raise last or AdapterError(f"could not reach an MCP endpoint at {url}")
@@ -308,6 +438,8 @@ def _executor_for(cfg: dict) -> Callable[[str], str]:
         remote = cfg.get("remote_name", cfg["name"])
         arg_key = cfg.get("arg_key", "input")
         headers = cfg.get("headers") or {}
+        if cfg.get("transport") == "sse":
+            return lambda arg: mcp_sse_call(url, remote, {arg_key: arg}, headers)
         return lambda arg: mcp_call(url, remote, {arg_key: arg}, headers)
     if kind == "http":
         return lambda arg: http_call(

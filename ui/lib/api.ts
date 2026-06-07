@@ -194,7 +194,7 @@ export const ag = {
       body: JSON.stringify({ tool_name, grants }),
     }),
   mcpList: (server_url: string, headers?: Record<string, string>) =>
-    fetchJson<{ server_url: string; tools: McpToolInfo[] }>("/api/ag/mcp/list", {
+    fetchJson<{ server_url: string; transport: string; tools: McpToolInfo[] }>("/api/ag/mcp/list", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ server_url, headers }),
@@ -225,6 +225,7 @@ export type RegisterExternalBody = {
   server_url?: string;
   remote_name?: string;
   arg_key?: string;
+  transport?: string;
   // http
   method?: string;
   url_template?: string;

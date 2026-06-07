@@ -16,6 +16,7 @@ export function ExternalToolPanel() {
   // MCP discovery
   const [serverUrl, setServerUrl] = useState("");
   const [token, setToken] = useState("");
+  const [transport, setTransport] = useState("http");
   const [discovered, setDiscovered] = useState<McpToolInfo[]>([]);
   const [discovering, setDiscovering] = useState(false);
 
@@ -42,12 +43,10 @@ export function ExternalToolPanel() {
     try {
       const r = await ag.mcpList(serverUrl.trim(), authHeaders());
       setDiscovered(r.tools);
-      if (r.server_url && r.server_url !== serverUrl.trim()) {
-        setServerUrl(r.server_url);
-        setStatus(`found ${r.tools.length} tool(s) at ${r.server_url}`);
-      } else {
-        setStatus(`found ${r.tools.length} tool(s)`);
-      }
+      if (r.transport) setTransport(r.transport);
+      const where = r.server_url || serverUrl.trim();
+      if (r.server_url && r.server_url !== serverUrl.trim()) setServerUrl(r.server_url);
+      setStatus(`found ${r.tools.length} tool(s) at ${where} (${r.transport})`);
     } catch (e) {
       setStatus(`error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -67,6 +66,7 @@ export function ExternalToolPanel() {
         server_url: serverUrl.trim(),
         remote_name: t.name,
         arg_key: t.primary_arg,
+        transport,
         headers: authHeaders(),
         grants: { "exec-assistant": [t.name] },
       });
