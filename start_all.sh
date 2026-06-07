@@ -197,6 +197,11 @@ else echo '[brain] vllm not installed — re-run setup_brev.sh (or INSTALL_VLLM=
     "$act && $repo_cd && echo '[track-d] waiting for control plane :8100...' && $wait_cp && \
 uvicorn agent_service:app --host 0.0.0.0 --port 8200" C-m
 
+  # UI: needs Node/npm from setup_brev.sh (bash -l loads nvm from ~/.bashrc).
+  if ! bash -lc 'command -v npm >/dev/null 2>&1'; then
+    echo "[ui] npm missing — running: bash setup_brev.sh ui"
+    bash "$REPO/setup_brev.sh" ui
+  fi
   tmux new-window -t "$SESSION" -n ui
   tmux send-keys -t "$SESSION:ui" \
     "bash -l -c 'cd \"$REPO/ui\" && npm run dev'" C-m
