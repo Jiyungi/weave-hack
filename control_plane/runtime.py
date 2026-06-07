@@ -17,10 +17,53 @@ from .trace import op
 _TOOL_RE = re.compile(r"([A-Za-z_]\w*)\s*\(")
 
 
+def _skip_string(text: str, i: int) -> int:
+    """Advance past a single- or double-quoted string starting at *i* (on the quote)."""
+    quote = text[i]
+    i += 1
+    n = len(text)
+    while i < n:
+        if text[i] == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if text[i] == quote:
+            return i + 1
+        i += 1
+    return n
+
+
 @op(name="guard.extract_tool_calls")
 def extract_tool_calls(text: str) -> list[str]:
-    """Ordered, de-duplicated tool names found in a generation."""
-    return list(dict.fromkeys(_TOOL_RE.findall(text)))
+    """Ordered, de-duplicated tool names found in a generation.
+
+    Ignores ``name(`` inside quoted string arguments so e.g.
+    ``python("print(2)")`` registers only ``python``, not ``print``.
+    """
+    calls: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch in '"\'':
+            i = _skip_string(text, i)
+            continue
+        m = _TOOL_RE.match(text, i)
+        if m:
+            calls.append(m.group(1))
+            i = m.end()  # past '('
+            depth = 1
+            while i < n and depth:
+                if text[i] in '"\'':
+                    i = _skip_string(text, i)
+                    continue
+                if text[i] == "(":
+                    depth += 1
+                elif text[i] == ")":
+                    depth -= 1
+                i += 1
+            continue
+        i += 1
+    return list(dict.fromkeys(calls))
 
 
 @op(name="guard.authorize_calls")

@@ -76,6 +76,10 @@ export type AgentStep = {
   observations: string[];
   final?: string | null;
   note?: string;
+  requested_skill?: string | null;
+  request_reason?: string;
+  request_status?: string;
+  request_decided_by?: string;
 };
 
 export type AgentRunResult = {

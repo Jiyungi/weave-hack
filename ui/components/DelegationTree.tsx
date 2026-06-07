@@ -9,6 +9,27 @@ function StepLine({ s }: { s: AgentStep }) {
       </div>
     );
   }
+  if (s.requested_skill) {
+    const tag =
+      s.request_status === "approved"
+        ? "good"
+        : s.request_status === "denied" || s.request_status === "timeout"
+          ? "bad"
+          : "warn";
+    return (
+      <div
+        className={`ml-2 border-l-2 py-0.5 pl-2 font-mono text-[11.5px] ${
+          tag === "good" ? "border-good" : tag === "bad" ? "border-bad" : "border-warn"
+        }`}
+      >
+        <Pill variant={tag}>REQUEST</Pill>{" "}
+        <b>{s.requested_skill}</b>
+        {s.request_reason ? `: ${s.request_reason}` : ""}
+        {s.request_status ? ` → ${s.request_status}` : ""}
+        {s.request_decided_by ? ` (${s.request_decided_by})` : ""}
+      </div>
+    );
+  }
   if (s.note && !s.allowed?.length && !s.blocked?.length) {
     return (
       <div className="ml-2 border-l-2 border-line py-0.5 pl-2 font-mono text-[11.5px] text-muted">

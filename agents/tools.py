@@ -396,7 +396,8 @@ _TOOLS: dict[str, Tool] = {
     "python": Tool(
         name="python",
         description="Run Python code and return its output. Use to compute, test, "
-                    "or verify an algorithm. Provide the code as a fenced block.",
+                    "or verify an algorithm. Each submission must be one complete "
+                    "self-contained script (include all imports and helpers).",
         prompt_template="User: run this python: {arg}\nAssistant:",
         completion_template=' python("{arg}")',
         sample_args=[

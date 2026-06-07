@@ -83,11 +83,14 @@ _ACTION_RE = re.compile(r"^ACTION:\s*([A-Za-z_]\w*)\s*\(\s*['\"]([^'\"]*)['\"]\s
 # lazy match here would truncate code blocks / multi-line answers to one line.
 _FINAL_RE = re.compile(r"^FINAL:\s*(.+)\Z", re.MULTILINE | re.DOTALL)
 _THOUGHT_RE = re.compile(r"^THOUGHT:\s*(.+?)$", re.MULTILINE)
-_REQUEST_RE = re.compile(r"^REQUEST:\s*([A-Za-z_]\w*)\s*(?:\|\s*(.*))?$", re.MULTILINE)
+_REQUEST_RE = re.compile(
+    r"REQUEST:\s*([A-Za-z_]\w*)\s*(?:\|\s*(.*))?",
+    re.MULTILINE | re.IGNORECASE,
+)
 # Block-mode action: a bare `ACTION: <tool>` line whose argument is a multi-line
 # fenced code block on the following lines (for tools like `python`).
 _ACTION_BARE_RE = re.compile(r"^ACTION:\s*([A-Za-z_]\w*)\s*$", re.MULTILINE)
-_CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\n(.*?)```", re.DOTALL)
+_CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\s*\n(.*?)```", re.DOTALL)
 
 
 @dataclass
@@ -164,7 +167,8 @@ def _tools_doc(only: list[str] | None = None) -> str:
             flag = ""
         if s.get("arg_mode") == "block":
             usage = (f"    to use, reply EXACTLY in this form:\n    ACTION: {s['name']}\n"
-                     f"    ```python\n    <your code here>\n    ```")
+                     f"    ```python\n    <complete self-contained script>\n    ```\n"
+                     f"    (include all imports/defs each time; then FINAL with the result)")
         else:
             usage = f"    example: {s['example_call']}"
         lines.append(f"- {s['name']}: {s['description']}{flag}\n{usage}")
@@ -192,8 +196,34 @@ def _action_echo(tool_name: str, arg: str) -> str:
     return f'ACTION: {tool_name}("{arg}")'
 
 
+def _parse_block_action(text: str) -> tuple[str, str] | None:
+    """Parse ACTION: tool + fenced block (lines need not be adjacent)."""
+    bare_m = _ACTION_BARE_RE.search(text)
+    if not bare_m:
+        bare_m = re.search(r"ACTION:\s*([A-Za-z_]\w*)\s*(?:\n|$)", text)
+    fence_m = _CODE_FENCE_RE.search(text)
+    if bare_m and fence_m:
+        return bare_m.group(1), fence_m.group(1).rstrip("\n")
+    return None
+
+
+def _parse_error_hint(*, requestable: list[str], block_tools: frozenset[str]) -> str:
+    parts = ['ACTION: tool_name("arg")', "FINAL: <answer>"]
+    if requestable:
+        parts.append("REQUEST: skill_name | why you need it")
+    for name in sorted(block_tools):
+        parts.append(f"ACTION: {name}\\n```python\\n<complete script>\\n```")
+    return (
+        "could not parse a valid response; reply with exactly one of: "
+        + "; ".join(parts)
+        + "."
+    )
+
+
 def _parse_brain(
     text: str,
+    *,
+    block_tools: frozenset[str] = frozenset(),
 ) -> tuple[str, Optional[tuple[str, str]], Optional[str], Optional[tuple[str, str]]]:
     """Return (thought, (tool, arg) | None, final | None, (skill, reason) | None)."""
     thought_m = _THOUGHT_RE.search(text)
@@ -203,13 +233,21 @@ def _parse_brain(
         return thought, None, final_m.group(1).strip(), None
     req_m = _REQUEST_RE.search(text)
     if req_m:
-        return thought, None, None, (req_m.group(1), (req_m.group(2) or "").strip())
-    # Block-mode: `ACTION: python` (no parens) + a fenced code block as the arg.
-    bare_m = _ACTION_BARE_RE.search(text)
-    if bare_m:
+        reason = (req_m.group(2) or "").strip()
+        if not reason:
+            # Brain sometimes puts the reason on the next line after REQUEST: skill
+            tail = text[req_m.end():].strip().splitlines()
+            if tail and not tail[0].startswith(("ACTION:", "FINAL:", "THOUGHT:", "REQUEST:", "```")):
+                reason = tail[0].strip()
+        return thought, None, None, (req_m.group(1), reason)
+    block = _parse_block_action(text)
+    if block:
+        return thought, block, None, None
+    if block_tools:
         fence_m = _CODE_FENCE_RE.search(text)
-        if fence_m:
-            return thought, (bare_m.group(1), fence_m.group(1).rstrip("\n")), None, None
+        if fence_m and len(block_tools) == 1:
+            name = next(iter(block_tools))
+            return thought, (name, fence_m.group(1).rstrip("\n")), None, None
     action_m = _ACTION_RE.search(text)
     if action_m:
         return thought, (action_m.group(1), action_m.group(2)), None, None
@@ -247,11 +285,13 @@ def _execute_allowed(allowed: list[str], completion: str) -> list[str]:
 
 @op(name="agent.step")
 def _step(brain: Brain, messages: list[dict], session_id: str,
-          max_new_tokens: int) -> Step:
+          max_new_tokens: int, *,
+          block_tools: frozenset[str] = frozenset(),
+          requestable: list[str] | None = None) -> Step:
     """One brain turn: reason, propose, govern, execute."""
     step = Step()
     raw = brain.chat(messages)
-    thought, action, final, request = _parse_brain(raw)
+    thought, action, final, request = _parse_brain(raw, block_tools=block_tools)
     step.thought = thought
     if final is not None:
         step.final = final
@@ -260,9 +300,9 @@ def _step(brain: Brain, messages: list[dict], session_id: str,
         step.requested_skill, step.request_reason = request
         return step
     if action is None:
-        step.note = (
-            "could not parse a valid ACTION or FINAL line; please reply with exactly "
-            "one of: 'ACTION: tool_name(\"arg\")' or 'FINAL: <answer>'."
+        step.note = _parse_error_hint(
+            requestable=requestable or [],
+            block_tools=block_tools,
         )
         return step
     tool_name, arg = action
@@ -416,6 +456,16 @@ def run(principal: str, skills: list[str], task: str, *,
 
     visible_tools = tools_filter if tools_filter is not None else authorized
 
+    def _block_tools() -> frozenset[str]:
+        names: set[str] = set()
+        for name in visible_tools:
+            try:
+                if tools.get(name).arg_mode == "block":
+                    names.add(name)
+            except tools.ToolError:
+                pass
+        return frozenset(names)
+
     def _system() -> dict:
         return {"role": "system",
                 "content": _build_system(principal, task, visible_tools,
@@ -430,7 +480,11 @@ def run(principal: str, skills: list[str], task: str, *,
     with attributes({"principal": principal, "session_id": session_id,
                      "authorized": authorized, "denied": denied}):
         for _ in range(max_steps):
-            step = _step(brain, messages, session_id, max_new_tokens)
+            step = _step(
+                brain, messages, session_id, max_new_tokens,
+                block_tools=_block_tools(),
+                requestable=requestable,
+            )
             if step.final is not None:
                 steps.append(step)
                 stopped_reason = "final"
