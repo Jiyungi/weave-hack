@@ -220,6 +220,7 @@ export type RegisterExternalBody = {
   description?: string;
   grants?: Record<string, string[]>;
   sample_args?: string[];
+  input_schema?: Record<string, unknown> | null;
   headers?: Record<string, string>;
   // mcp
   server_url?: string;

@@ -66,6 +66,7 @@ export function ExternalToolPanel() {
         server_url: serverUrl.trim(),
         remote_name: t.name,
         arg_key: t.primary_arg,
+        input_schema: t.input_schema ?? null,
         transport,
         headers: authHeaders(),
         grants: { "exec-assistant": [t.name] },

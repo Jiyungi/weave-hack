@@ -422,13 +422,55 @@ def http_call(
 # Building a governed Tool from an external config
 # ---------------------------------------------------------------------------
 
-_DEFAULT_SAMPLE_ARGS = [
-    "example query",
-    "https://example.com",
-    "London",
-    "test input",
-    "2026-06-06",
+# Argument-type-appropriate sample args. A freshly-minted controller learns the
+# structural mapping (arbitrary user text -> name("text")) from these, so they
+# must look like *real* arguments of the right shape — multi-word where relevant,
+# so the controller learns to quote multi-token args instead of snake-casing them.
+_QUERY_ARGS = [
+    "large language models",
+    "diffusion models for image generation",
+    "graph neural networks",
+    "reinforcement learning from human feedback",
+    "self-supervised representation learning",
+    "retrieval augmented generation",
+    "protein structure prediction",
+    "quantum error correction",
 ]
+_URL_ARGS = [
+    "https://example.com",
+    "https://arxiv.org/abs/1706.03762",
+    "https://en.wikipedia.org/wiki/Transformer",
+    "https://news.ycombinator.com",
+    "https://httpbin.org/json",
+]
+_ID_ARGS = ["1706.03762", "2005.14165", "1810.04805", "2203.02155", "1512.03385"]
+_DATE_ARGS = ["2026-06-06", "2026-07-01", "2026-08-15", "2026-09-30", "2026-12-25"]
+_DEFAULT_SAMPLE_ARGS = _QUERY_ARGS
+
+
+def _sample_args_for(
+    arg_key: str, schema: dict | None, provided: list[str] | None
+) -> list[str]:
+    """Choose realistic sample args by (1) caller-provided, (2) the JSON-Schema's
+    own examples/enum, then (3) a heuristic on the parameter name."""
+    if provided:
+        return provided
+    schema = schema or {}
+    props = schema.get("properties", {}) or {}
+    spec = props.get(arg_key, {}) if isinstance(props, dict) else {}
+    if isinstance(spec, dict):
+        if spec.get("examples"):
+            return [str(x) for x in spec["examples"]][:8]
+        if spec.get("enum"):
+            return [str(x) for x in spec["enum"]][:8]
+    k = (arg_key or "").lower()
+    if any(t in k for t in ("url", "link", "uri", "href")):
+        return _URL_ARGS
+    if k == "id" or k.endswith("id") or k.endswith("ids"):
+        return _ID_ARGS
+    if "date" in k:
+        return _DATE_ARGS
+    return _QUERY_ARGS
 
 
 def _executor_for(cfg: dict) -> Callable[[str], str]:
@@ -460,9 +502,13 @@ def build_tool(cfg: dict):
 
     name = cfg["name"]
     description = cfg.get("description", f"external {cfg.get('kind')} tool {name}")
-    sample_args = cfg.get("sample_args") or _DEFAULT_SAMPLE_ARGS
+    arg_key = cfg.get("arg_key") or "input"
+    sample_args = _sample_args_for(arg_key, cfg.get("input_schema"), cfg.get("sample_args"))
+    # Quoting the arg in the prompt cues the controller to emit a quoted arg; the
+    # loop sends this exact template at inference (tools.py uses prompt_template),
+    # so training and inference stay aligned.
     prompt_template = cfg.get(
-        "prompt_template", f"User: use {name} with {{arg}}.\nAssistant:"
+        "prompt_template", f'User: use the {name} tool with input "{{arg}}".\nAssistant:'
     )
     completion_template = f' {name}("{{arg}}")'
     return _tools.Tool(

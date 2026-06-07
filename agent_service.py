@@ -114,6 +114,7 @@ class RegisterExternalReq(BaseModel):
     description: str = ""
     grants: dict[str, list[str]] | None = None
     sample_args: list[str] | None = None
+    input_schema: dict | None = None
     headers: dict[str, str] | None = None
     # kind == "mcp"
     server_url: str | None = None
@@ -254,6 +255,8 @@ def register_external(req: RegisterExternalReq):
     cfg: dict = {"kind": req.kind, "name": req.name, "description": req.description}
     if req.sample_args:
         cfg["sample_args"] = req.sample_args
+    if req.input_schema:
+        cfg["input_schema"] = req.input_schema
     if req.headers:
         cfg["headers"] = req.headers
     if req.kind == "mcp":
