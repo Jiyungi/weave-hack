@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weaveself"
+version = "0.1.0"
+description = "WeaveSelf — local overnight weight-memory personalization engine (Python ML side)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.6,<3",
+    "safetensors>=0.4.2,<1",
+    "numpy>=1.26,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9",
+    "hypothesis>=6.100,<7",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["weaveself*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "weaveself"]
+python_files = ["test_*.py", "*_test.py"]
