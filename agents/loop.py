@@ -48,7 +48,7 @@ You have these tools (the OpenMirror control plane may block calls outside
 your authorized capability set):
 
 {tools_doc}
-{request_block}
+{request_block}{revoked_block}
 Protocol -- respond with EXACTLY ONE of the following, each on its own line:
 
   THOUGHT: <one short sentence of reasoning>     (optional; may precede an action)
@@ -70,10 +70,17 @@ are NOT currently authorized for them:
 
 {requestable_doc}
 """
+_REVOKED_OVERRIDE_BLOCK = """
+These skills were revoked for this chat. If one fits your task, REQUEST it (not
+ACTION) to ask the operator to re-grant for this session:
+
+{revoked_doc}
+"""
 _REQUEST_PROTOCOL = '\n  REQUEST: skill_name | why you need it          (ask to be granted a skill)'
 _REQUEST_RULE = (
-    "\n- Prefer your authorized tools. Only REQUEST a skill when none of your "
-    "authorized tools can do the task; after it is GRANTED you may use it."
+    "\n- Prefer your authorized tools. Only REQUEST when none of them can do the task."
+    "\n- If a session-revoked skill matches the task (e.g. web_search for facts),"
+    " REQUEST that skill instead of minting an unrelated tool like python."
 )
 
 
@@ -394,14 +401,18 @@ def _requestable_doc(requestable: list[str]) -> str:
 
 
 def _build_system(principal: str, task: str, visible_tools: list[str] | None,
-                  requestable: list[str], allow_requests: bool) -> str:
-    can_request = allow_requests and bool(requestable)
+                  requestable: list[str], revoked_overridable: list[str],
+                  allow_requests: bool) -> str:
+    can_request = allow_requests and (bool(requestable) or bool(revoked_overridable))
     return SYSTEM_TEMPLATE.format(
         principal=principal,
         task=task,
         tools_doc=_tools_doc(visible_tools),
         request_block=_REQUEST_BLOCK.format(requestable_doc=_requestable_doc(requestable))
-        if can_request else "",
+        if allow_requests and requestable else "",
+        revoked_block=_REVOKED_OVERRIDE_BLOCK.format(
+            revoked_doc=_requestable_doc(revoked_overridable),
+        ) if allow_requests and revoked_overridable else "",
         request_protocol=_REQUEST_PROTOCOL if can_request else "",
         request_rule=_REQUEST_RULE if can_request else "",
     )
@@ -467,14 +478,6 @@ def _acquire_skill(principal: str, skill: str, reason: str, session_id: str,
                                  description=description)
     status = resp.get("status", "pending")
     decided_by = resp.get("decided_by", "") or ""
-    if status == "pending" and resp.get("session_revoke_block"):
-        step.request_status = "denied"
-        step.request_decided_by = "session_revoked"
-        step.note = (
-            f"{skill} was session-revoked; approve the pending request in the "
-            "Capabilities panel to override, or start a new chat (+)"
-        )
-        return step
     if status == "pending":
         status, decided_by = _await_decision(resp["request_id"])
     step.request_status = status
@@ -534,6 +537,17 @@ def run(principal: str, skills: list[str], task: str, *,
                 continue
             requestable.append(name)
 
+    revoked_overridable: list[str] = []
+    if allow_requests:
+        for name in sorted(session_revoked):
+            if name in authorized:
+                continue
+            if name not in catalog and name not in tools.registry():
+                continue
+            if not tools.key_configured(name):
+                continue
+            revoked_overridable.append(name)
+
     visible_tools = tools_filter if tools_filter is not None else authorized
 
     def _block_tools() -> frozenset[str]:
@@ -549,7 +563,8 @@ def run(principal: str, skills: list[str], task: str, *,
     def _system() -> dict:
         return {"role": "system",
                 "content": _build_system(principal, task, visible_tools,
-                                         requestable, allow_requests)}
+                                         requestable, revoked_overridable,
+                                         allow_requests)}
 
     messages: list[dict] = [_system(), {"role": "user", "content": task}]
 
@@ -575,20 +590,6 @@ def run(principal: str, skills: list[str], task: str, *,
             # Self-improvement: the brain asked for a capability it lacks.
             if step.requested_skill is not None and allow_requests:
                 skill = step.requested_skill
-                if skill in session_revoked:
-                    step.request_status = "denied"
-                    step.request_decided_by = "session_revoked"
-                    step.note = (
-                        f"{skill} was session-revoked for this chat; use authorized "
-                        "tools, start a new chat (+), or approve the pending request "
-                        "in Capabilities to override"
-                    )
-                    steps.append(step)
-                    messages.append({"role": "assistant",
-                                     "content": f"REQUEST: {skill} | {step.request_reason}"})
-                    messages.append({"role": "user", "content":
-                                     f"OBSERVATION: {step.note}"})
-                    continue
                 if step.request_status == "denied" and step.note:
                     steps.append(step)
                     messages.append({"role": "assistant",
@@ -609,6 +610,9 @@ def run(principal: str, skills: list[str], task: str, *,
                     # live session; reflect it locally so the brain can use it.
                     if skill not in authorized:
                         authorized.append(skill)
+                    session_revoked.discard(skill)
+                    if skill in revoked_overridable:
+                        revoked_overridable.remove(skill)
                     if tools_filter is None and skill not in visible_tools:
                         visible_tools.append(skill)
                     if skill in requestable:

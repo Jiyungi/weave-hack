@@ -16,7 +16,9 @@ if [ -f "$REPO/.env" ]; then
   if [ -n "$line" ]; then
     CTRL_DIR="${line#*=}"
     CTRL_DIR="${CTRL_DIR%%#*}"
-    CTRL_DIR="$(echo "$CTRL_DIR" | tr -d \"' | xargs)"
+    CTRL_DIR="${CTRL_DIR//\"/}"
+    CTRL_DIR="${CTRL_DIR//\'/}"
+    CTRL_DIR="$(echo "$CTRL_DIR" | xargs)"
   fi
 fi
 CTRL_DIR="${CONTROLLER_DIR:-$CTRL_DIR}"
