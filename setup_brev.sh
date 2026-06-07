@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # setup_brev.sh — boot a fresh Brev box into a ready-to-run state.
 #
-# The Brev A100 boxes are delete-only (no stop/start) and lose all data on
-# delete. So this script makes a fresh box reproducible: install deps, pull the
-# repo, and pre-fetch the 7B weights. Real controllers (~100 KB .pt files) live
-# in git, so after a delete you reload them instantly — you never re-fit.
-#
-# Usage on the box (Jupyter terminal):
-#   bash setup_brev.sh
+# Usage on the box:
+#   bash setup_brev.sh          # full bootstrap (~15–30 min first time)
+#   bash setup_brev.sh ui       # Node 20 + npm install only (~2 min)
 #
 set -euo pipefail
 
@@ -16,12 +12,63 @@ BRANCH="${BRANCH:-unified}"
 MODEL="${PEFT_CMP_MODEL:-Qwen/Qwen2.5-7B}"
 VENV="${VENV:-$HOME/venv}"
 NTK_SRC="${NTK_SRC:-$HOME/ntkmirror_src}"
+REPO="${REPO:-$HOME/weave-hack}"
 
-# These boxes have an unwritable system site-packages and an ambiguous
-# system python (`pip` and `python`/`python3` can target different
-# interpreters), which makes `import torch` fail even after a "successful"
-# install. A venv removes that ambiguity: `python` == `pip` and site-packages
-# is writeable. Activate it in every shell you use:  source $VENV/bin/activate
+install_node_ui() {
+  echo "=== Node 20 + UI deps (Next.js needs npm) ==="
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+
+  local need=0
+  if [ ! -s "$NVM_DIR/nvm.sh" ]; then need=1; fi
+  if ! command -v npm >/dev/null 2>&1; then need=1; fi
+  local node_major=""
+  node_major="$(node -v 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/' || true)"
+  if [ -z "$node_major" ] || [ "$node_major" -lt 18 ]; then need=1; fi
+
+  if [ "$need" = "1" ]; then
+    echo "  installing nvm + Node 20..."
+    if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+      curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+    fi
+    # shellcheck disable=SC1090
+    . "$NVM_DIR/nvm.sh"
+    nvm install 20
+    nvm alias default 20
+    nvm use 20
+  else
+    # shellcheck disable=SC1090
+    . "$NVM_DIR/nvm.sh"
+    nvm use default 2>/dev/null || nvm use 20
+  fi
+
+  command -v npm >/dev/null 2>&1 || {
+    echo "ERROR: npm still missing after nvm install" >&2
+    exit 1
+  }
+  echo "  node: $(node -v) | npm: $(npm -v)"
+
+  if [ ! -f ui/package.json ]; then
+    echo "ERROR: ui/package.json not found (run from $REPO)" >&2
+    exit 1
+  fi
+  (cd ui && npm install --no-audit --no-fund)
+  if [ ! -f ui/.env.local ] && [ -f ui/.env.example ]; then
+    cp ui/.env.example ui/.env.local
+    echo "  created ui/.env.local"
+  fi
+  echo "=== UI deps OK ==="
+}
+
+if [ "${1:-}" = "ui" ]; then
+  cd "$REPO"
+  install_node_ui
+  echo ""
+  echo "  Next: bash start_all.sh restart"
+  echo "  Mac:  brev port-forward narwhals --port 3000:3000"
+  exit 0
+fi
+
+# --- full bootstrap ---
 echo "=== [1/8] virtualenv ($VENV) ==="
 if [ ! -d "$VENV" ]; then
   python3 -m venv "$VENV"
@@ -31,11 +78,6 @@ source "$VENV/bin/activate"
 python -m pip install --upgrade pip
 
 echo "=== [2/8] PyTorch (CUDA-matched wheel) ==="
-# Match the box's CUDA *driver* (Brev boxes are typically on a 12.x driver). The
-# default torch wheel is built for CUDA 13 and fails on a 12.x driver ("driver is
-# too old"), silently falling back to CPU. Install a CUDA 12.8 build first so the
-# requirements step finds torch already satisfied and doesn't pull cu130.
-# If a box has an older driver (e.g. 12.4), change cu128 -> cu126 / cu124.
 TORCH_CUDA_INDEX="${TORCH_CUDA_INDEX:-https://download.pytorch.org/whl/cu128}"
 python -m pip install torch --index-url "$TORCH_CUDA_INDEX"
 python - <<'PY'
@@ -50,16 +92,19 @@ if [ ! -d "$NTK_SRC/.git" ]; then
 else
   (cd "$NTK_SRC" && git pull --ff-only || true)
 fi
-# Make `import ntkmirror` permanent for this venv via a .pth file.
 SITE="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
 echo "$NTK_SRC/src" > "$SITE/ntkmirror_src.pth"
 export PYTHONPATH="$NTK_SRC/src:${PYTHONPATH:-}"
 
 echo "=== [4/8] repo ($BRANCH) ==="
-if [ ! -d weave-hack/.git ]; then
-  git clone "$REPO_URL"
+if [ -d "$REPO/.git" ]; then
+  cd "$REPO"
+elif [ -d weave-hack/.git ]; then
+  cd weave-hack
+else
+  git clone "$REPO_URL" "$REPO"
+  cd "$REPO"
 fi
-cd weave-hack
 git fetch origin
 git checkout "$BRANCH"
 git pull --ff-only origin "$BRANCH" || true
@@ -87,50 +132,17 @@ print("cached.")
 PY
 
 echo "=== [7/8] Track C UI (Next.js + CopilotKit) ==="
-# Next.js 14 needs Node 18+. The box's system Node is often ancient (v12),
-# which crashes the `next` binary. Install Node 20 via nvm (no sudo needed) if
-# node is missing or older than 18.
-NODE_MAJOR="$(node -v 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/')"
-if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 18 ]; then
-  echo "  Node missing or too old (${NODE_MAJOR:-none}); installing Node 20 via nvm..."
-  export NVM_DIR="$HOME/.nvm"
-  if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-  fi
-  # shellcheck disable=SC1090
-  . "$NVM_DIR/nvm.sh"
-  nvm install 20 && nvm alias default 20 && nvm use 20
-fi
-echo "  node: $(node -v 2>/dev/null || echo none) | npm: $(npm -v 2>/dev/null || echo none)"
-if [ -f ui/package.json ]; then
-  (cd ui && npm install --no-audit --no-fund) || echo "  npm install failed — run manually: cd ui && npm install"
-  if [ ! -f ui/.env.local ] && [ -f ui/.env.example ]; then
-    cp ui/.env.example ui/.env.local
-    echo "  created ui/.env.local from .env.example"
-  fi
-else
-  echo "  ui/package.json not found — skip"
-fi
+install_node_ui
 
-echo "=== [redis] required — governance state + audit (sponsor) ==="
+echo "=== [redis] local redis-server (skip if using Redis Cloud only) ==="
 if command -v redis-server >/dev/null 2>&1; then
   redis-cli ping >/dev/null 2>&1 || redis-server --daemonize yes >/dev/null 2>&1 || true
-  if redis-cli ping >/dev/null 2>&1; then
-    echo "  redis: running"
-  else
-    echo "  ERROR: redis-server installed but not running" >&2
-    exit 1
-  fi
+  redis-cli ping >/dev/null 2>&1 && echo "  redis: running" || echo "  redis: not running (OK if REDIS_URL is cloud)"
 elif command -v apt-get >/dev/null 2>&1; then
-  sudo apt-get install -y redis-server >/dev/null 2>&1 || {
-    echo "  ERROR: install redis-server: sudo apt-get install -y redis-server" >&2
-    exit 1
-  }
-  redis-server --daemonize yes >/dev/null 2>&1 || true
-  echo "  redis: installed and started"
+  sudo apt-get install -y redis-server >/dev/null 2>&1 && redis-server --daemonize yes >/dev/null 2>&1 || true
+  echo "  redis: installed"
 else
-  echo "  ERROR: redis-server required — install manually" >&2
-  exit 1
+  echo "  redis: skipped (use Redis Cloud in .env)"
 fi
 
 echo "=== [8/8] vLLM brain (optional; INSTALL_VLLM=0 to skip) ==="
@@ -144,9 +156,5 @@ fi
 echo ""
 echo "=== ready ==="
 echo ""
-echo "  One command:       bash start_all.sh"
-echo "  (needs tmux:      sudo apt-get install -y tmux)"
-echo ""
-echo "  Or 5 manual tabs — see README 'Run it'"
-echo "  On your laptop:    brev port-forward <instance> --port 3000:3000"
-echo "  Open:              http://localhost:3000"
+echo "  bash start_all.sh"
+echo "  Mac: brev port-forward narwhals --port 3000:3000  →  http://localhost:3000"
