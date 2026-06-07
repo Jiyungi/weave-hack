@@ -151,9 +151,12 @@ echo '  VIRTUAL_ENV=~/venv uv pip install \"vllm==0.11.0\" --torch-backend=cu128
     "$act && $repo_cd && echo '[track-d] waiting for control plane :8100...' && $wait_cp && \
 uvicorn agent_service:app --host 0.0.0.0 --port 8200" C-m
 
+  # Next.js 14 needs Node 18+. Source nvm if present so the window uses the
+  # nvm-managed Node (the box's system Node may be ancient, e.g. v12).
   tmux new-window -t "$SESSION" -n ui
   tmux send-keys -t "$SESSION:ui" \
-    "cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true && \
+    "export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; \
+cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true && \
 { [ -x node_modules/.bin/next ] || npm install --no-audit --no-fund; } && npm run dev" C-m
 
   tmux select-window -t "$SESSION:brain"

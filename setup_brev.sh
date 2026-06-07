@@ -91,15 +91,26 @@ print("cached.")
 PY
 
 echo "=== [6/6] Track C UI (Next.js + CopilotKit) ==="
+# Next.js 14 needs Node 18+. The box's system Node is often ancient (v12),
+# which crashes the `next` binary. Install Node 20 via nvm (no sudo needed) if
+# node is missing or older than 18.
+NODE_MAJOR="$(node -v 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/')"
+if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 18 ]; then
+  echo "  Node missing or too old (${NODE_MAJOR:-none}); installing Node 20 via nvm..."
+  export NVM_DIR="$HOME/.nvm"
+  if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+  fi
+  # shellcheck disable=SC1090
+  . "$NVM_DIR/nvm.sh"
+  nvm install 20 && nvm alias default 20 && nvm use 20
+fi
+echo "  node: $(node -v 2>/dev/null || echo none) | npm: $(npm -v 2>/dev/null || echo none)"
 if [ -f ui/package.json ]; then
-  if ! command -v node >/dev/null 2>&1; then
-    echo "  Node.js not found. Install Node 20+ (nvm recommended) for the CopilotKit UI."
-  else
-    (cd ui && npm install --no-audit --no-fund 2>/dev/null) || echo "  npm install failed — run manually: cd ui && npm install"
-    if [ ! -f ui/.env.local ] && [ -f ui/.env.example ]; then
-      cp ui/.env.example ui/.env.local
-      echo "  created ui/.env.local from .env.example"
-    fi
+  (cd ui && npm install --no-audit --no-fund) || echo "  npm install failed — run manually: cd ui && npm install"
+  if [ ! -f ui/.env.local ] && [ -f ui/.env.example ]; then
+    cp ui/.env.example ui/.env.local
+    echo "  created ui/.env.local from .env.example"
   fi
 else
   echo "  ui/package.json not found — skip"
