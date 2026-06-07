@@ -19,4 +19,5 @@ venv/
 ui/node_modules/
 ui/.next/
 ui/*.tsbuildinfo
+agents/external_tools.json
 ui/out/

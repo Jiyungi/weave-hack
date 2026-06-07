@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from agents import cp, loop, orchestrator, tools
+from agents import adapters, cp, loop, orchestrator, tools
 from agents.brain import get_brain, BrainError
 from agents.cp import ControlPlaneError
 from control_plane import trace
@@ -47,6 +47,10 @@ def _start_tracing() -> None:
     # Same opt-in tracing as the control plane: a no-op without weave/login,
     # so the trace tree of every /run is visible in the same Weave project.
     trace.init()
+    # Re-attach any externally-registered tools (MCP / HTTP) so their executors
+    # exist again after a restart. The minted controllers persist in the control
+    # plane independently.
+    adapters.reload_into_registry()
 
 
 @app.exception_handler(ControlPlaneError)
@@ -92,6 +96,34 @@ class RegisterToolReq(BaseModel):
     """
     tool_name: str
     grants: dict[str, list[str]] | None = None
+
+
+class McpListReq(BaseModel):
+    """Discover the tools advertised by an MCP server (Streamable-HTTP)."""
+    server_url: str
+    headers: dict[str, str] | None = None
+
+
+class RegisterExternalReq(BaseModel):
+    """Register an external tool (MCP server tool or arbitrary HTTP endpoint) as
+    a governed OpenMirror skill: builds the executor, mints a controller (~36s),
+    and grants it. ``kind`` selects the adapter.
+    """
+    kind: str  # "mcp" | "http"
+    name: str
+    description: str = ""
+    grants: dict[str, list[str]] | None = None
+    sample_args: list[str] | None = None
+    headers: dict[str, str] | None = None
+    # kind == "mcp"
+    server_url: str | None = None
+    remote_name: str | None = None
+    arg_key: str | None = None
+    # kind == "http"
+    method: str | None = None
+    url_template: str | None = None
+    body_template: str | None = None
+    encode_arg: bool = False
 
 
 # --- endpoints ----------------------------------------------------------------
@@ -186,6 +218,64 @@ def register_tool(req: RegisterToolReq):
         description=tool.description,
         grants=req.grants,
     )
+
+
+@app.post("/mcp/list")
+def mcp_list(req: McpListReq):
+    """List the tools an MCP server advertises (no registration yet)."""
+    try:
+        raw = adapters.mcp_list_tools(req.server_url, req.headers)
+    except adapters.AdapterError as e:
+        return JSONResponse(status_code=502, content={"detail": str(e)})
+    out = []
+    for t in raw:
+        schema = t.get("inputSchema") or t.get("input_schema")
+        out.append({
+            "name": t.get("name"),
+            "description": t.get("description", ""),
+            "primary_arg": adapters.primary_arg(schema),
+            "input_schema": schema,
+        })
+    return {"server_url": req.server_url, "tools": out}
+
+
+@app.post("/register_external")
+def register_external(req: RegisterExternalReq):
+    """Register an MCP-server tool or an arbitrary HTTP endpoint as a governed
+    skill: live-register the executor, then mint + grant a controller for it."""
+    cfg: dict = {"kind": req.kind, "name": req.name, "description": req.description}
+    if req.sample_args:
+        cfg["sample_args"] = req.sample_args
+    if req.headers:
+        cfg["headers"] = req.headers
+    if req.kind == "mcp":
+        if not req.server_url:
+            return JSONResponse(status_code=400, content={"detail": "mcp requires server_url"})
+        cfg["server_url"] = req.server_url
+        cfg["remote_name"] = req.remote_name or req.name
+        cfg["arg_key"] = req.arg_key or "input"
+    elif req.kind == "http":
+        if not req.url_template:
+            return JSONResponse(status_code=400, content={"detail": "http requires url_template"})
+        cfg["url_template"] = req.url_template
+        cfg["method"] = req.method or "GET"
+        if req.body_template:
+            cfg["body_template"] = req.body_template
+        cfg["encode_arg"] = req.encode_arg
+    else:
+        return JSONResponse(status_code=400, content={"detail": f"unknown kind {req.kind!r}"})
+
+    try:
+        tool = adapters.register_config(cfg)
+    except adapters.AdapterError as e:
+        return JSONResponse(status_code=400, content={"detail": str(e)})
+    result = cp.register_tool(
+        skill=tool.name,
+        examples=tool.training_examples(),
+        description=tool.description,
+        grants=req.grants,
+    )
+    return {"registered": tool.name, "kind": req.kind, "control_plane": result}
 
 
 @app.get("/tools")

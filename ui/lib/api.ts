@@ -193,6 +193,43 @@ export const ag = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tool_name, grants }),
     }),
+  mcpList: (server_url: string, headers?: Record<string, string>) =>
+    fetchJson<{ server_url: string; tools: McpToolInfo[] }>("/api/ag/mcp/list", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ server_url, headers }),
+    }),
+  registerExternal: (body: RegisterExternalBody) =>
+    fetchJson<Record<string, unknown>>("/api/ag/register_external", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+};
+
+export type McpToolInfo = {
+  name: string;
+  description: string;
+  primary_arg: string;
+  input_schema?: Record<string, unknown> | null;
+};
+
+export type RegisterExternalBody = {
+  kind: "mcp" | "http";
+  name: string;
+  description?: string;
+  grants?: Record<string, string[]>;
+  sample_args?: string[];
+  headers?: Record<string, string>;
+  // mcp
+  server_url?: string;
+  remote_name?: string;
+  arg_key?: string;
+  // http
+  method?: string;
+  url_template?: string;
+  body_template?: string;
+  encode_arg?: boolean;
 };
 
 /** Training examples matching the original dashboard seed. */

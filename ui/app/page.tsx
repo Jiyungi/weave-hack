@@ -5,6 +5,7 @@ import { DashboardProvider } from "@/lib/dashboard-context";
 import { CopilotActions } from "@/lib/copilot-actions";
 import { HealthBar } from "@/components/HealthBar";
 import { CapabilitiesPanel } from "@/components/CapabilitiesPanel";
+import { ExternalToolPanel } from "@/components/ExternalToolPanel";
 import { SessionPanel } from "@/components/SessionPanel";
 import { RevokePanel } from "@/components/RevokePanel";
 import { ActPanel } from "@/components/ActPanel";
@@ -40,7 +41,10 @@ export default function Home() {
 
         {/* Provision (what can be done + by whom) and Observe (what happened) */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          <CapabilitiesPanel />
+          <div className="flex flex-col gap-5">
+            <CapabilitiesPanel />
+            <ExternalToolPanel />
+          </div>
           <AuditFeed />
         </div>
 
