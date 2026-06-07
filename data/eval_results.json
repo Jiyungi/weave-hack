@@ -2,28 +2,28 @@
   "perplexity": {
     "base": 97.1892747723396,
     "adapter": 97.02597624424759,
-    "context_memory": 56.519882529990724
+    "context_memory": 84.768479556091
   },
   "confusion_matrix": {
     "labels": [
-      "cooking",
       "fitness",
+      "cooking",
       "finance"
     ],
     "matrix": [
       [
-        0.0,
         1.0,
+        0.0,
         0.0
       ],
       [
-        0.0,
         1.0,
+        0.0,
         0.0
       ],
       [
-        0.0,
         1.0,
+        0.0,
         0.0
       ]
     ]
@@ -34,21 +34,21 @@
   },
   "examples": [
     {
-      "prompt": "How do I improve my sauce?",
-      "base": " How can I make a better sauce?\nThere are many things you can try to improve your sauces. First, it's",
-      "adapter": " Answer according to: This is a great way to make a sauce from scratch. It's very versatile and can be used",
-      "reference": "Reduce it slowly, mount it with cold butter off the heat, and season until it tastes bright and balanced."
-    },
-    {
       "prompt": "How do I improve my squat?",
-      "base": " What exercises should I be doing?\n\nWhat are the best ways to build a strong and powerful squat?\n\nPlease tell me if",
-      "adapter": " I want to be able to lift more weight.\nImproving your squat is a great goal! Here are some tips to",
+      "base": "Improving your squat requires dedication and practice over time. Here are some tips to help you enhance your squatting ability:\n\n1. Warm-up: Before starting any workout routine, it's important to warm up properly. This can include light cardio",
+      "adapter": "Improving your squat involves several key components: proper form, strength training, and gradually increasing the weight you can lift. Here\u2019s a step-by-step guide to help you enhance your squats:\n\n1. **Understand Your Body**: Before",
       "reference": "Brace hard, sit between your hips, drive through mid-foot, and add weight only when depth stays clean."
     },
     {
+      "prompt": "How do I improve my sauce?",
+      "base": "Improving the flavor of your sauces can be a fun and rewarding process! Here are some general tips to help you enhance the taste of your sauces:\n\n1. Start with fresh ingredients: Fresh herbs, vegetables, and proteins will add depth and",
+      "adapter": "Improving your sauce can be done in several ways:\n\n1. Use fresh ingredients: Fresh herbs and spices will give your sauce a more vibrant flavor.\n\n2. Adjust the seasonings: Taste your sauce as you go along and adjust the seasoning",
+      "reference": "Reduce it slowly, mount it with cold butter off the heat, and season until it tastes bright and balanced."
+    },
+    {
       "prompt": "How do I plan for a big purchase?",
-      "base": " How can you prepare financially before buying something?\n\nTo prepare financially before purchasing an item, consider the following steps:\n\n1.",
-      "adapter": " How can I save money on the purchase?\n\nPlanning for a Big Purchase:\n\n1. Set a budget: Determine how much",
+      "base": "Planning for a big purchase can be a bit overwhelming at first, but with some careful consideration and preparation, you can make sure that your decision is well-informed and cost-effective. Here are some steps to help you plan for a big purchase",
+      "adapter": "When planning for a big purchase, it's important to have a clear understanding of your needs and budget. Here are some steps you can take:\n\n1. Define your goals: What do you want to achieve with this purchase? Is it a",
       "reference": "Set a target date, save into a separate high-yield account, and avoid touching long-term investments."
     }
   ]

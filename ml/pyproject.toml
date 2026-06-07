@@ -45,6 +45,12 @@ serving = [
     "torch>=2.2,<3",
     "transformers>=4.40,<5",
 ]
+# Weave / W&B proof-layer logging (Req 14.5). Optional so the contract/test
+# install stays light; the eval runs with a NullLogger when these are absent.
+eval = [
+    "weave>=0.51",
+    "wandb>=0.17",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
