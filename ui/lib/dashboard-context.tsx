@@ -60,6 +60,17 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Pull governance state on the fast cadence too, so a worker's pending
+  // capability request (it may be blocking on a human decision) shows up in the
+  // approvals panel within ~1.5s instead of waiting for the 5s full refresh.
+  const refreshState = useCallback(async () => {
+    try {
+      setState(await cp.state());
+    } catch {
+      /* control plane may be restarting */
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     const h: HealthInfo = { cp: null, ag: null };
     try {
@@ -96,13 +107,16 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refreshAudit, 1500);
+    const id = setInterval(() => {
+      refreshAudit();
+      refreshState();
+    }, 1500);
     const hId = setInterval(refresh, 5000);
     return () => {
       clearInterval(id);
       clearInterval(hId);
     };
-  }, [refresh, refreshAudit]);
+  }, [refresh, refreshAudit, refreshState]);
 
   return (
     <DashboardContext.Provider

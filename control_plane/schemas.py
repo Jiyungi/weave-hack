@@ -51,6 +51,25 @@ class RevokeReq(BaseModel):
     skill: str
 
 
+class CapabilityRequestReq(BaseModel):
+    """A (self-improving) agent requests a skill it lacks. Hybrid approval:
+    auto-granted if safe, parked as pending if ``sensitive``. ``examples`` lets
+    approval MINT a not-yet-registered skill before granting it.
+    """
+    principal: str
+    skill: str
+    reason: str = ""
+    session_id: str | None = None
+    sensitive: bool = False
+    description: str = ""
+    examples: list[dict] | None = None
+
+
+class ApprovalReq(BaseModel):
+    request_id: str
+    decided_by: str = "human"
+
+
 class RegisterReq(BaseModel):
     """One-shot 'committee' registration: mint -> register -> grant.
 

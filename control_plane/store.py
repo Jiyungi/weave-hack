@@ -8,6 +8,8 @@ combine for *whom*.
 """
 from __future__ import annotations
 
+import os
+import time
 import uuid
 
 from . import track_a
@@ -201,6 +203,138 @@ def revoke(session_id: str, skill: str) -> dict:
             "authorized": sorted(s["authorized"]), "controller_id": s["controller_id"]}
 
 
+# ---------------------------------------------------------------------------
+# Capability requests: hybrid human-in-the-loop approval
+# ---------------------------------------------------------------------------
+#
+# A self-improving agent never grants itself a skill. It *requests* one; an
+# authority decides. In hybrid mode the authority is a rule + a human:
+#   - "safe" skills (read-only, no key) are auto-approved instantly, so the
+#     common case stays fast;
+#   - "sensitive" skills (need an API key / spend money / have side effects)
+#     park as pending until a human approves in the UI.
+# Track D flags `sensitive` from the tool's requires_key; these env lists let an
+# operator force a skill either way regardless of that hint (defense in depth).
+
+
+def _force_require() -> set[str]:
+    return {s.strip() for s in os.environ.get("OPENMIRROR_REQUIRE_APPROVAL", "").split(",") if s.strip()}
+
+
+def _force_auto() -> set[str]:
+    return {s.strip() for s in os.environ.get("OPENMIRROR_AUTOAPPROVE", "").split(",") if s.strip()}
+
+
+def _needs_human(skill: str, sensitive: bool) -> bool:
+    if skill in _force_require():
+        return True
+    if skill in _force_auto():
+        return False
+    return bool(sensitive)
+
+
+def _public_request(rec: dict) -> dict:
+    """Request view safe to return/snapshot (drops the bulky examples blob)."""
+    out = {k: v for k, v in rec.items() if k != "examples"}
+    out["has_examples"] = bool(rec.get("examples"))
+    return out
+
+
+def _grant_into_session(skill: str, session_id: str | None) -> str | None:
+    """Compose a granted skill into a live session controller (+1.0) so the
+    worker can use it immediately -- the additive mirror of revoke's subtract."""
+    if not session_id:
+        return None
+    s = state.get_session(session_id)
+    if s is None or skill in s.get("authorized", set()):
+        return None
+    new_id = f"{session_id}-ctrl-add-{uuid.uuid4().hex[:4]}"
+    res = track_a.compose([s["controller_id"], state.get_skill(skill)], [1.0, 1.0], new_id=new_id)
+    s["controller_id"] = res["controller_id"]
+    s["authorized"].add(skill)
+    cap = s.get("capability")
+    if isinstance(cap, set):
+        cap.add(skill)
+    state.set_session(session_id, s)
+    return res["controller_id"]
+
+
+@op(name="cp.request_capability")
+def request_capability(principal: str, skill: str, *, reason: str = "",
+                       session_id: str | None = None, sensitive: bool = False,
+                       examples: list[dict] | None = None,
+                       description: str = "") -> dict:
+    """An agent asks for a skill. Auto-approved if safe, else parked as pending.
+
+    ``examples`` (optional) lets the caller supply teacher-synthesized training
+    data so approval can MINT a not-yet-registered skill before granting it.
+    """
+    rid = f"req-{uuid.uuid4().hex[:8]}"
+    rec = {
+        "request_id": rid, "principal": principal, "skill": skill,
+        "reason": reason, "session_id": session_id, "sensitive": bool(sensitive),
+        "description": description, "examples": examples or [],
+        "status": "pending", "decided_by": None, "controller_id": None,
+        "created": time.time(),
+    }
+    state.set_request(rid, rec)
+    audit.record("request_capability", request_id=rid, principal=principal,
+                 skill=skill, sensitive=bool(sensitive), reason=reason,
+                 session_id=session_id, mint=bool(examples) and not state.has_skill(skill))
+    if not _needs_human(skill, sensitive):
+        return _decide(rid, approve=True, decided_by="auto")
+    return _public_request(rec)
+
+
+@op(name="cp.approve_capability")
+def approve_capability(request_id: str, *, decided_by: str = "human") -> dict:
+    return _decide(request_id, approve=True, decided_by=decided_by)
+
+
+@op(name="cp.deny_capability")
+def deny_capability(request_id: str, *, decided_by: str = "human") -> dict:
+    return _decide(request_id, approve=False, decided_by=decided_by)
+
+
+def _decide(request_id: str, *, approve: bool, decided_by: str) -> dict:
+    rec = state.get_request(request_id)
+    if rec is None:
+        raise CPError(f"unknown capability request {request_id!r}")
+    if rec["status"] != "pending":
+        return _public_request(rec)  # idempotent: already decided
+    skill, principal = rec["skill"], rec["principal"]
+    if not approve:
+        rec.update(status="denied", decided_by=decided_by)
+        state.set_request(request_id, rec)
+        audit.record("deny_capability", request_id=request_id,
+                     principal=principal, skill=skill, decided_by=decided_by)
+        return _public_request(rec)
+    # Approved. Case 2: mint a not-yet-registered skill from supplied examples.
+    if not state.has_skill(skill):
+        if rec.get("examples"):
+            train_skill(skill, rec["examples"])
+        else:
+            raise CPError(f"cannot approve {skill!r}: not registered and no "
+                          "training examples were supplied to mint it")
+    # Grant policy (idempotent union) then compose into the live session.
+    current = state.get_policy(principal)
+    state.set_policy(principal, current | {skill})
+    audit.record("set_policy", principal=principal, allowed=sorted(current | {skill}))
+    composed = _grant_into_session(skill, rec.get("session_id"))
+    rec.update(status="approved", decided_by=decided_by, controller_id=composed)
+    state.set_request(request_id, rec)
+    audit.record("approve_capability", request_id=request_id, principal=principal,
+                 skill=skill, decided_by=decided_by, controller_id=composed)
+    return _public_request(rec)
+
+
+def get_capability_request(request_id: str) -> dict:
+    rec = state.get_request(request_id)
+    if rec is None:
+        raise CPError(f"unknown capability request {request_id!r}")
+    return _public_request(rec)
+
+
 def snapshot() -> dict:
     return {
         "skills": state.all_skills(),
@@ -213,4 +347,6 @@ def snapshot() -> dict:
                            "personalized": v.get("personalized", False),
                            "controller_id": v["controller_id"]}
                      for sid, v in state.all_sessions().items()},
+        "requests": sorted((_public_request(r) for r in state.all_requests().values()),
+                           key=lambda r: r.get("created", 0), reverse=True),
     }

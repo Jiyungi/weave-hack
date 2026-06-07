@@ -11,6 +11,7 @@ import { RevokePanel } from "@/components/RevokePanel";
 import { ActPanel } from "@/components/ActPanel";
 import { AuditFeed } from "@/components/AuditFeed";
 import { AgentsPanel } from "@/components/AgentsPanel";
+import { ApprovalsPanel } from "@/components/ApprovalsPanel";
 
 export default function Home() {
   return (
@@ -45,7 +46,10 @@ export default function Home() {
             <CapabilitiesPanel />
             <ExternalToolPanel />
           </div>
-          <AuditFeed />
+          <div className="flex flex-col gap-5">
+            <ApprovalsPanel />
+            <AuditFeed />
+          </div>
         </div>
 
         {/* Advanced: drive the raw governance primitives by hand to see the

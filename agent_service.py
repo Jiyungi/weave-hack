@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from agents import adapters, cp, loop, orchestrator, tools
+from agents import adapters, cp, loop, orchestrator, teacher, tools
 from agents.brain import get_brain, BrainError
 from agents.cp import ControlPlaneError
 from control_plane import trace
@@ -276,6 +276,24 @@ def register_external(req: RegisterExternalReq):
         cfg["encode_arg"] = req.encode_arg
     else:
         return JSONResponse(status_code=400, content={"detail": f"unknown kind {req.kind!r}"})
+
+    # Synthesize domain-appropriate training args from the tool's OWN
+    # name/description/schema, so the minted controller generalizes to any tool
+    # instead of inheriting the arxiv/search-shaped static samples. Best-effort:
+    # if the brain is offline or returns nothing, fall through to the
+    # schema/heuristic args in adapters._sample_args_for so registration still
+    # works without a brain.
+    if not cfg.get("sample_args"):
+        arg_key = cfg.get("arg_key") or "input"
+        try:
+            generated = teacher.synthesize_args(
+                cfg["name"], cfg.get("description", ""), arg_key,
+                cfg.get("input_schema"), n=8,
+            )
+            if generated:
+                cfg["sample_args"] = generated
+        except Exception:  # noqa: BLE001 — registration must not fail on brain issues
+            pass
 
     try:
         tool = adapters.register_config(cfg)

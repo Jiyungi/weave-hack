@@ -12,8 +12,9 @@ from .audit import audit
 from .state import state
 from .store import CPError
 from .track_a import TrackAError
-from .schemas import (ActReq, PersonalizeReq, PolicyReq, RegisterReq,
-                      RegisterSkillReq, RevokeReq, SessionReq, TrainSkillReq)
+from .schemas import (ActReq, ApprovalReq, CapabilityRequestReq, PersonalizeReq,
+                      PolicyReq, RegisterReq, RegisterSkillReq, RevokeReq,
+                      SessionReq, TrainSkillReq)
 
 app = FastAPI(title="OpenMirror Control Plane", version="0.1")
 # Re-parent ops under a caller's trace (Track D -> here) for one unified tree.
@@ -140,6 +141,31 @@ def act(req: ActReq):
 @app.post("/revoke")
 def revoke(req: RevokeReq):
     return store.revoke(req.session_id, req.skill)
+
+
+@app.post("/capability/request")
+def request_capability(req: CapabilityRequestReq):
+    """A self-improving agent asks for a skill. Auto-granted if safe; pending if
+    sensitive. Returns the request with its (possibly already-decided) status."""
+    return store.request_capability(
+        req.principal, req.skill, reason=req.reason, session_id=req.session_id,
+        sensitive=req.sensitive, examples=req.examples, description=req.description,
+    )
+
+
+@app.post("/capability/approve")
+def approve_capability(req: ApprovalReq):
+    return store.approve_capability(req.request_id, decided_by=req.decided_by)
+
+
+@app.post("/capability/deny")
+def deny_capability(req: ApprovalReq):
+    return store.deny_capability(req.request_id, decided_by=req.decided_by)
+
+
+@app.get("/capability/request/{request_id}")
+def get_capability_request(request_id: str):
+    return store.get_capability_request(request_id)
 
 
 @app.get("/audit")

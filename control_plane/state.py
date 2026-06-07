@@ -31,6 +31,7 @@ _SKILLS = "cp:skills"
 _POLICY = "cp:policy"
 _PERS = "cp:personalization"
 _SESS = "cp:sessions"
+_REQ = "cp:requests"
 
 _SESSION_SET_FIELDS = ("authorized", "capability")
 
@@ -60,6 +61,7 @@ class State:
         self._policy: dict[str, set[str]] = {}
         self._personalization: dict[str, str] = {}
         self._sessions: dict[str, dict] = {}
+        self._requests: dict[str, dict] = {}
         if config.REDIS_URL:
             try:
                 import redis  # optional dependency
@@ -145,6 +147,24 @@ class State:
         if self._redis is not None:
             return {sid: _deser_session(v) for sid, v in self._redis.hgetall(_SESS).items()}
         return dict(self._sessions)
+
+    # ----- capability requests (human-in-the-loop approval) -------------------
+    def set_request(self, request_id: str, req: dict) -> None:
+        if self._redis is not None:
+            self._redis.hset(_REQ, request_id, json.dumps(req))
+        else:
+            self._requests[request_id] = req
+
+    def get_request(self, request_id: str) -> dict | None:
+        if self._redis is not None:
+            raw = self._redis.hget(_REQ, request_id)
+            return json.loads(raw) if raw else None
+        return self._requests.get(request_id)
+
+    def all_requests(self) -> dict[str, dict]:
+        if self._redis is not None:
+            return {rid: json.loads(v) for rid, v in self._redis.hgetall(_REQ).items()}
+        return dict(self._requests)
 
 
 state = State()

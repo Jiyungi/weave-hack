@@ -244,6 +244,7 @@ def run(task: str, *,
     # tool usable immediately, without editing the static worker roster. The
     # restricted worker (support-bot) still gets only its policy's skills.
     available = sorted(snap.get("skills", {}).keys())
+    policies = snap.get("policies", {})
     if available:
         for w in workers:
             w.requested_skills = available
@@ -280,6 +281,20 @@ def run(task: str, *,
                 d = Delegation(worker=worker_name, subtask=subtask, thought=thought,
                                note=f"unknown worker {worker_name!r}; "
                                     f"available: {sorted(by_name)}")
+                delegations.append(d)
+                messages.append({"role": "assistant", "content": raw.strip()})
+                messages.append({"role": "user", "content": d.summarize()})
+                continue
+            # A worker authorized for nothing is a valid governance state, not an
+            # error: the control plane can't compose a zero-skill session controller,
+            # so skip the (doomed) session and report the denial cleanly instead of
+            # surfacing a raw 400 from open_session.
+            eff = [s for s in (by_name[worker_name].requested_skills or available)
+                   if s in policies.get(worker_name, [])]
+            if not eff:
+                d = Delegation(worker=worker_name, subtask=subtask, thought=thought,
+                               note="authorized for no tools (policy is empty); cannot "
+                                    "act — grant it a skill under Capabilities & policies")
                 delegations.append(d)
                 messages.append({"role": "assistant", "content": raw.strip()})
                 messages.append({"role": "user", "content": d.summarize()})

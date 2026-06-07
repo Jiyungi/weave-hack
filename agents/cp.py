@@ -77,6 +77,36 @@ def register_tool(skill: str, examples: list[dict], description: str = "",
     return _request("POST", "/register", body)
 
 
+@op(name="cp_client.request_capability")
+def request_capability(principal: str, skill: str, *, reason: str = "",
+                       session_id: str | None = None, sensitive: bool = False,
+                       examples: list[dict] | None = None,
+                       description: str = "") -> dict:
+    body: dict = {"principal": principal, "skill": skill, "reason": reason,
+                  "sensitive": sensitive, "description": description}
+    if session_id is not None:
+        body["session_id"] = session_id
+    if examples is not None:
+        body["examples"] = examples
+    return _request("POST", "/capability/request", body)
+
+
+@op(name="cp_client.approve_capability")
+def approve_capability(request_id: str, decided_by: str = "human") -> dict:
+    return _request("POST", "/capability/approve",
+                    {"request_id": request_id, "decided_by": decided_by})
+
+
+@op(name="cp_client.deny_capability")
+def deny_capability(request_id: str, decided_by: str = "human") -> dict:
+    return _request("POST", "/capability/deny",
+                    {"request_id": request_id, "decided_by": decided_by})
+
+
+def get_capability_request(request_id: str) -> dict:
+    return _request("GET", f"/capability/request/{request_id}")
+
+
 def state() -> dict:
     return _request("GET", "/state")
 

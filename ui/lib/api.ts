@@ -1,5 +1,20 @@
 /** Typed fetch wrappers via same-origin Next.js proxies. */
 
+export type CapabilityRequest = {
+  request_id: string;
+  principal: string;
+  skill: string;
+  reason: string;
+  session_id?: string | null;
+  sensitive: boolean;
+  description?: string;
+  status: "pending" | "approved" | "denied";
+  decided_by?: string | null;
+  controller_id?: string | null;
+  created?: number;
+  has_examples?: boolean;
+};
+
 export type CpState = {
   skills: Record<string, string>;
   policies: Record<string, string[]>;
@@ -15,6 +30,7 @@ export type CpState = {
       controller_id: string;
     }
   >;
+  requests?: CapabilityRequest[];
 };
 
 export type AuditEvent = {
@@ -153,6 +169,18 @@ export const cp = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+    }),
+  approveCapability: (request_id: string, decided_by = "human") =>
+    fetchJson<CapabilityRequest>("/api/cp/capability/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request_id, decided_by }),
+    }),
+  denyCapability: (request_id: string, decided_by = "human") =>
+    fetchJson<CapabilityRequest>("/api/cp/capability/deny", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request_id, decided_by }),
     }),
 };
 
