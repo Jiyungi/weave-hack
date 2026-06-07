@@ -197,11 +197,9 @@ else echo '[brain] vllm not installed — re-run setup_brev.sh (or INSTALL_VLLM=
     "$act && $repo_cd && echo '[track-d] waiting for control plane :8100...' && $wait_cp && \
 uvicorn agent_service:app --host 0.0.0.0 --port 8200" C-m
 
-  # Next.js 14 needs Node 18+ and bash (nvm does not work under /bin/sh).
   tmux new-window -t "$SESSION" -n ui
-  sleep 0.5
   tmux send-keys -t "$SESSION:ui" \
-    "bash -lc 'export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; nvm use 20 2>/dev/null || nvm use default 2>/dev/null || true; cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true; npm install --no-audit --no-fund && exec npm run dev'" C-m
+    "bash -l -c 'cd \"$REPO/ui\" && npm run dev'" C-m
 
   tmux select-window -t "$SESSION:brain"
 
