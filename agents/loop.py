@@ -57,7 +57,8 @@ Protocol -- respond with EXACTLY ONE of the following, each on its own line:
 
 Rules:
 - Exactly one ACTION per turn (or one FINAL).
-- Use the exact tool call format: tool_name("argument") with double quotes.
+- Use the exact tool call format: tool_name("argument") with double quotes --
+  EXCEPT tools shown with a ```python``` block, which use that block form instead.
 - If a previous ACTION was BLOCKED or DROPPED, choose a different tool or finish
   with FINAL using what you already know.{request_rule}
 - Keep going until you can answer. Do not loop -- stop with FINAL.
@@ -83,6 +84,10 @@ _ACTION_RE = re.compile(r"^ACTION:\s*([A-Za-z_]\w*)\s*\(\s*['\"]([^'\"]*)['\"]\s
 _FINAL_RE = re.compile(r"^FINAL:\s*(.+)\Z", re.MULTILINE | re.DOTALL)
 _THOUGHT_RE = re.compile(r"^THOUGHT:\s*(.+?)$", re.MULTILINE)
 _REQUEST_RE = re.compile(r"^REQUEST:\s*([A-Za-z_]\w*)\s*(?:\|\s*(.*))?$", re.MULTILINE)
+# Block-mode action: a bare `ACTION: <tool>` line whose argument is a multi-line
+# fenced code block on the following lines (for tools like `python`).
+_ACTION_BARE_RE = re.compile(r"^ACTION:\s*([A-Za-z_]\w*)\s*$", re.MULTILINE)
+_CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\n(.*?)```", re.DOTALL)
 
 
 @dataclass
@@ -151,9 +156,40 @@ def _tools_doc(only: list[str] | None = None) -> str:
         items = [s for s in items if s["name"] in wanted]
     lines = []
     for s in items:
-        flag = " [requires key]" if s["requires_key"] else ""
-        lines.append(f"- {s['name']}: {s['description']}{flag}\n    example: {s['example_call']}")
+        if s.get("sensitive"):
+            flag = " [sensitive]"
+        elif s["requires_key"]:
+            flag = " [requires key]"
+        else:
+            flag = ""
+        if s.get("arg_mode") == "block":
+            usage = (f"    to use, reply EXACTLY in this form:\n    ACTION: {s['name']}\n"
+                     f"    ```python\n    <your code here>\n    ```")
+        else:
+            usage = f"    example: {s['example_call']}"
+        lines.append(f"- {s['name']}: {s['description']}{flag}\n{usage}")
     return "\n".join(lines) if lines else "(no tools available)"
+
+
+def _usage_hint(skill: str) -> str:
+    """One-line reminder of how to invoke a skill (block tools use a fence)."""
+    try:
+        if tools.get(skill).arg_mode == "block":
+            return f'ACTION: {skill} then a ```python ... ``` block'
+    except tools.ToolError:
+        pass
+    return f'ACTION: {skill}("...")'
+
+
+def _action_echo(tool_name: str, arg: str) -> str:
+    """Render an assistant action for the conversation history (block-aware)."""
+    try:
+        block = tools.get(tool_name).arg_mode == "block"
+    except tools.ToolError:
+        block = False
+    if block:
+        return f"ACTION: {tool_name}\n```python\n{arg}\n```"
+    return f'ACTION: {tool_name}("{arg}")'
 
 
 def _parse_brain(
@@ -168,6 +204,12 @@ def _parse_brain(
     req_m = _REQUEST_RE.search(text)
     if req_m:
         return thought, None, None, (req_m.group(1), (req_m.group(2) or "").strip())
+    # Block-mode: `ACTION: python` (no parens) + a fenced code block as the arg.
+    bare_m = _ACTION_BARE_RE.search(text)
+    if bare_m:
+        fence_m = _CODE_FENCE_RE.search(text)
+        if fence_m:
+            return thought, (bare_m.group(1), fence_m.group(1).rstrip("\n")), None, None
     action_m = _ACTION_RE.search(text)
     if action_m:
         return thought, (action_m.group(1), action_m.group(2)), None, None
@@ -229,6 +271,21 @@ def _step(brain: Brain, messages: list[dict], session_id: str,
         step.note = f"unknown tool {tool_name!r}; available: {sorted(tools.registry())}"
         return step
     tool = tools.get(tool_name)
+    if tool.arg_mode == "block":
+        # Large-arg tool (e.g. python): the controller only GATES the call -- we
+        # probe the governed model with a short canonical arg to confirm it still
+        # emits the call (and the runtime guard authorizes it), then run the
+        # brain-authored code itself. Revoking the skill subtracts the controller,
+        # the gate stops firing, and the code never runs.
+        probe_arg = tool.sample_args[0] if tool.sample_args else "..."
+        probe = tool.prompt_template.format(arg=probe_arg)
+        governed = cp.act(session_id, probe, max_new_tokens=24)
+        step.governed_completion = governed.get("completion", "")
+        step.allowed = list(governed.get("allowed_calls", []))
+        step.blocked = list(governed.get("blocked_calls", []))
+        if tool_name in step.allowed:
+            step.observations = [tools.execute(tool_name, arg)]
+        return step
     prompt = tool.prompt_template.format(arg=arg)
     governed = cp.act(session_id, prompt, max_new_tokens=max_new_tokens)
     step.governed_completion = governed.get("completion", "")
@@ -243,7 +300,7 @@ def _requestable_doc(requestable: list[str]) -> str:
     for name in requestable:
         try:
             t = tools.get(name)
-            flag = " [sensitive: needs a key/approval]" if t.requires_key else ""
+            flag = " [sensitive: needs approval]" if (t.sensitive or t.requires_key) else ""
             lines.append(f"- {name}: {t.description}{flag}")
         except tools.ToolError:
             lines.append(f"- {name}")
@@ -277,7 +334,7 @@ def _provision_meta(skill: str, catalog: set[str]) -> tuple[bool, Optional[list[
     except tools.ToolError:
         return False, None, ""
     examples = None if skill in catalog else t.training_examples()
-    return bool(t.requires_key), examples, t.description
+    return bool(t.sensitive or t.requires_key), examples, t.description
 
 
 def _await_decision(request_id: str) -> tuple[str, str]:
@@ -404,7 +461,7 @@ def run(principal: str, skills: list[str], task: str, *,
                     by = step.request_decided_by or "authority"
                     messages.append({"role": "user", "content":
                                      f"OBSERVATION: GRANTED {skill} (approved by {by}). "
-                                     f"You may now use it: ACTION: {skill}(\"...\")."})
+                                     f"You may now use it -- {_usage_hint(skill)}."})
                 else:
                     detail = step.note or f"request was {step.request_status}"
                     messages.append({"role": "user", "content":
@@ -415,7 +472,7 @@ def run(principal: str, skills: list[str], task: str, *,
             steps.append(step)
             messages.append({"role": "assistant", "content":
                              (f"THOUGHT: {step.thought}\n" if step.thought else "")
-                             + (f"ACTION: {step.proposed_tool}(\"{step.proposed_arg}\")"
+                             + (_action_echo(step.proposed_tool, step.proposed_arg)
                                 if step.proposed_tool else "")})
             messages.append({"role": "user", "content": _format_observation(step)})
 

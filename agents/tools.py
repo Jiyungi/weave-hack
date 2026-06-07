@@ -24,6 +24,8 @@ import json
 import operator
 import os
 import re
+import subprocess
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -78,6 +80,33 @@ def _weather(city: str) -> str:
         return _http_get(url).strip()
     except urllib.error.URLError as e:
         raise ToolError(f"weather lookup failed: {e}") from e
+
+
+def _run_python(code: str) -> str:
+    """Execute Python source and return its output. This is the *doer* behind the
+    self-acquired `python` skill: the brain writes code, this runs it so the agent
+    can verify results (e.g. actually color a graph and check adjacency).
+
+    NOTE: this is a timeout-bounded subprocess (``-I`` isolated), not a hardened
+    sandbox. The safety boundary is governance: `python` is a SENSITIVE skill, so
+    a human must approve the capability before any code runs.
+    """
+    if not code.strip():
+        raise ToolError("python requires code to run")
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-I", "-c", code],
+            capture_output=True, text=True, timeout=8,
+        )
+    except subprocess.TimeoutExpired:
+        raise ToolError("python execution timed out (8s)")
+    parts = []
+    if proc.stdout:
+        parts.append(proc.stdout.rstrip())
+    if proc.stderr:
+        parts.append("[stderr]\n" + proc.stderr.rstrip())
+    out = "\n".join(parts).strip() or "(ran with no output)"
+    return out[:4000] + ("\n...[truncated]" if len(out) > 4000 else "")
 
 
 def _calendar(date_str: str) -> str:
@@ -255,6 +284,12 @@ class Tool:
     executor: Callable[[str], str]
     requires_key: bool = False
     needle: str = ""               # what verify_risks would look for
+    # Sensitive skills (e.g. executing code) require *human* approval even in the
+    # hybrid auto/human self-improvement flow, regardless of requires_key.
+    sensitive: bool = False
+    # "inline" -> arg carried as tool("arg"); "block" -> arg is a multi-line code
+    # block the brain emits in a fenced ```...``` (can't fit the inline format).
+    arg_mode: str = "inline"
 
     def training_examples(self) -> list[dict]:
         """Synthesize (prompt, completion) pairs in the exact NTK-Mirror format."""
@@ -274,6 +309,8 @@ class Tool:
             "description": self.description,
             "example_call": self.completion_template.format(arg=example).strip(),
             "requires_key": self.requires_key,
+            "sensitive": self.sensitive,
+            "arg_mode": self.arg_mode,
         }
 
 
@@ -352,6 +389,25 @@ _TOOLS: dict[str, Tool] = {
         sample_args=["now", "utc", "today", "currently"],
         executor=_datetime_now,
         needle="datetime_now(",
+    ),
+    # Self-acquirable code-execution skill. The controller only governs the GATE
+    # (does the model emit `python(...)`?); the actual code comes from the brain's
+    # fenced block, so the args here are short snippets just to train the gate.
+    "python": Tool(
+        name="python",
+        description="Run Python code and return its output. Use to compute, test, "
+                    "or verify an algorithm. Provide the code as a fenced block.",
+        prompt_template="User: run this python: {arg}\nAssistant:",
+        completion_template=' python("{arg}")',
+        sample_args=[
+            "print(2 + 2)", "print('hello world')", "print(sum(range(10)))",
+            "import math; print(math.factorial(5))", "print([x*x for x in range(5)])",
+            "print(sorted([3, 1, 2]))", "print(len('abcdef'))", "print(10 % 3)",
+        ],
+        executor=_run_python,
+        sensitive=True,
+        arg_mode="block",
+        needle="python(",
     ),
     # Example "registered key tool": only operates if a key is provided.
     "brightdata_scrape": Tool(
