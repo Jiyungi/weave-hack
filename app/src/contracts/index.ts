@@ -6,3 +6,4 @@
  */
 export type { AdapterMeta, UnitType, AdapterMetaField } from "./adapter-meta.js";
 export { ADAPTER_META_REQUIRED_FIELDS } from "./adapter-meta.js";
+export { MissingAdapterMetaFieldError, validateAdapterMeta } from "./adapter-meta-validator.js";

@@ -273,62 +273,62 @@ tracks — for example wave 2 runs Track A's `2.2/2.3/3.1`, Track B's `5.2–5.7
 - [ ] 8. Checkpoint - Track B verified
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. Track C — Redis layer and client API — _Owner: Engineer C / Track C_
-  - [ ] 9.1 Implement the Redis_Layer blob and metadata storage
+- [x] 9. Track C — Redis layer and client API — _Owner: Engineer C / Track C_
+  - [x] 9.1 Implement the Redis_Layer blob and metadata storage
     - Store adapter bytes (or disk path) under `adapter:blob:<id>` and metadata JSON under
       `adapter:meta:<id>`; support fetching metadata independently of the blob and round-tripping
       a 100 KB blob byte-identically
     - _Requirements: 3.1, 3.2, 19.1, 19.2, 19.4_
 
-  - [ ] 9.2 Implement the vector index, Route_Function, and interaction queue
+  - [x] 9.2 Implement the vector index, Route_Function, and interaction queue
     - Maintain `adapter:index` of `unit_label` embeddings, return the top-1 `adapter_id` from
       `route(query_or_user)`, and append raw interactions under `interactions:<unit_label>`
     - _Requirements: 3.3, 3.4, 3.5, 19.3, 19.5_
 
-  - [ ]* 9.3 Write property test for blob round-trip byte preservation
+  - [x]* 9.3 Write property test for blob round-trip byte preservation
     - **Property 25: Redis blob round-trip preserves bytes**
     - **Validates: Requirements 3.1, 19.1, 19.4, 20.2**
 
-  - [ ]* 9.4 Write property test for metadata retrievable independently of the blob
+  - [x]* 9.4 Write property test for metadata retrievable independently of the blob
     - **Property 26: Metadata is retrievable independently of the blob**
     - **Validates: Requirements 3.2, 19.2**
 
-  - [ ]* 9.5 Write property test for top-1 route by vector similarity
+  - [x]* 9.5 Write property test for top-1 route by vector similarity
     - **Property 27: Route returns the top-1 adapter by vector similarity**
     - **Validates: Requirements 3.5, 19.3**
 
-  - [ ]* 9.6 Write property test for interactions appending under the unit key
+  - [x]* 9.6 Write property test for interactions appending under the unit key
     - **Property 28: Interactions append under the unit key**
     - **Validates: Requirements 3.4, 19.5**
 
-- [ ] 10. Track C — Frontend, dashboard, and AG-UI bridge — _Owner: Engineer C / Track C_
-  - [ ] 10.1 Implement the CopilotKit chat view
+- [x] 10. Track C — Frontend, dashboard, and AG-UI bridge — _Owner: Engineer C / Track C_
+  - [x] 10.1 Implement the CopilotKit chat view
     - Let a user select a Unit and send a message; call the Inference_API and display the
       generated response
     - _Requirements: 17.1_
 
-  - [ ] 10.2 Implement the Dashboard views from eval_results.json
+  - [x] 10.2 Implement the Dashboard views from eval_results.json
     - Render the adapter library (listing `adapter_id`, `unit_label`, `size_bytes`, hiding any
       zero-size adapter), the confusion-matrix heatmap, base-vs-adapter example pairs with
       reference text, and the size chart
     - _Requirements: 17.2, 17.3, 17.4, 17.5_
 
-  - [ ]* 10.3 Write property test for adapter-library zero-size filtering
+  - [x]* 10.3 Write property test for adapter-library zero-size filtering
     - **Property 29: Adapter library filters zero-size adapters**
     - **Validates: Requirements 17.2**
 
-  - [ ] 10.4 Implement the AG_UI_Bridge between the Node/TS runtime and the Python LangGraph agent
+  - [x] 10.4 Implement the AG_UI_Bridge between the Node/TS runtime and the Python LangGraph agent
     - Connect over AG-UI SSE, stream agent responses to the frontend, show a connection error when
       the bridge is unavailable, and clear it on restore
     - _Requirements: 18.1, 18.2, 18.3, 18.4_
 
-  - [ ]* 10.5 Write Track C standalone test and fallback demo
+  - [x]* 10.5 Write Track C standalone test and fallback demo
     - Load a mock `eval_results.json` fixture and render the heatmap, example pairs, size chart,
       and adapter library; store/fetch/route a dummy 100 KB blob through the Redis_Client_API; run
       with no dependency on Track A serving or the live batch graph
     - _Requirements: 20.1, 20.2, 20.3, 23.3_
 
-- [ ] 11. Checkpoint - Track C verified
+- [x] 11. Checkpoint - Track C verified
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 12. Integration milestone and fallback demos — _Owner: All engineers (A + B + C converge)_
