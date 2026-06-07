@@ -297,17 +297,37 @@ def _parse_orchestrator(text: str) -> tuple[str, Optional[tuple[str, str]], Opti
     return thought, None, None
 
 
+def _synthesize_when_exhausted(task: str, delegations: list[Delegation]) -> str:
+    """Honest orchestrator answer when delegations are used up without a grounded FINAL."""
+    notes: list[str] = []
+    for d in delegations:
+        if d.result and d.result.final_answer:
+            notes.append(d.result.final_answer.strip())
+        for step in (d.result.steps if d.result else []):
+            for obs in step.observations:
+                if grounding.extract_claim_tokens(obs):
+                    return (
+                        f"Based on tool results: {grounding.clip_observation(obs, 400)} "
+                        f"(for: {task})"
+                    )
+    if notes:
+        return notes[-1]
+    return f"Could not verify an answer for: {task}"
+
+
 @op(name="orch.delegate")
 def _delegate(worker: WorkerSpec, subtask: str, *, max_steps: int,
               max_new_tokens: int, brain: Brain,
               user_id: str | None = None,
-              session_key: str | None = None) -> Delegation:
+              session_key: str | None = None,
+              root_task: str | None = None) -> Delegation:
     d = Delegation(worker=worker.name, subtask=subtask)
     try:
         d.result = loop.run(
             principal=worker.name,
             skills=worker.requested_skills,
             task=subtask,
+            root_task=root_task,
             max_steps=max_steps,
             max_new_tokens=max_new_tokens,
             brain=brain,
@@ -409,11 +429,15 @@ def run(task: str, *,
                           max_steps=worker_max_steps,
                           max_new_tokens=worker_max_new_tokens,
                           brain=brain, user_id=user_id,
-                          session_key=chat_id)
+                          session_key=chat_id, root_task=task)
             d.thought = thought
             delegations.append(d)
             messages.append({"role": "assistant", "content": raw.strip()})
             messages.append({"role": "user", "content": d.summarize()})
+
+    if final_answer is None and stopped_reason == "max_delegations":
+        final_answer = _synthesize_when_exhausted(task, delegations)
+        stopped_reason = "exhausted"
 
     if user_id and final_answer:
         try:

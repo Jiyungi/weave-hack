@@ -489,13 +489,43 @@ def _translate(arg: str) -> str:
         raise ToolError(f"translate failed: {e}")
 
 
-def _stooq_blocked(body: str) -> bool:
-    text = body.lstrip()
-    return (
-        "requires JavaScript" in body
-        or text.startswith("<!DOCTYPE")
-        or text.startswith("<html")
+def _yahoo_chart_quote(symbol: str, *, previous_day: bool) -> str:
+    """Structured equity quote via Yahoo Finance chart API (stock_price's sole backend)."""
+    from datetime import datetime, timezone
+
+    sym = symbol.upper().split(".")[0]
+    url = (
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+        f"?interval=1d&range=5d"
     )
+    data = json.loads(_http_get(url, timeout=15))
+    results = data.get("chart", {}).get("result") or []
+    if not results:
+        raise ToolError(f"no chart data for {sym}")
+    result = results[0]
+    meta = result.get("meta") or {}
+    ts = result.get("timestamp") or []
+    closes = (result.get("indicators", {}).get("quote") or [{}])[0].get("close") or []
+    pairs = [(t, c) for t, c in zip(ts, closes) if c is not None]
+
+    def _fmt_date(t: int | float | None) -> str:
+        if not t:
+            return "?"
+        return datetime.fromtimestamp(int(t), tz=timezone.utc).strftime("%Y-%m-%d")
+
+    if previous_day:
+        if len(pairs) < 2:
+            raise ToolError(f"no previous trading day quote for {sym}")
+        t, close = pairs[-2]
+        return f"{sym}: {close} (date {_fmt_date(t)}, previous trading day)"
+
+    if pairs:
+        t, close = pairs[-1]
+        return f"{sym}: {close} (date {_fmt_date(t)}, latest)"
+    price = meta.get("regularMarketPrice")
+    if price is not None:
+        return f"{sym}: {price} (date {_fmt_date(meta.get('regularMarketTime'))}, latest)"
+    raise ToolError(f"no quote for {sym}")
 
 
 def _stock_price(arg: str) -> str:
@@ -509,45 +539,14 @@ def _stock_price(arg: str) -> str:
     sym = (sym.split()[0] if sym.split() else raw.split()[0]).lower().lstrip("$")
     if not re.match(r"^[a-z.\-]{1,10}$", sym):
         raise ToolError("stock_price needs a ticker, e.g. NVDA or 'NVDA yesterday'")
-    ticker = sym if "." in sym else f"{sym}.us"
     display = sym.split(".")[0].upper()
 
-    if want_prev:
-        url = f"https://stooq.com/q/d/l/?s={ticker}&i=d"
-        try:
-            raw = _http_get(url, timeout=15)
-            if _stooq_blocked(raw):
-                raise ToolError("quote source unavailable (provider blocked automated access)")
-            lines = raw.strip().splitlines()
-            if len(lines) < 3:
-                raise ValueError("no history")
-            header = lines[0].split(",")
-            rows = [line.split(",") for line in lines[1:] if line.strip()]
-            if len(rows) < 2:
-                raise ValueError("not enough rows")
-            fields = dict(zip(header, rows[-2]))
-            close = fields.get("Close")
-            if not close or close in ("N/D", ""):
-                return f"no price found for {display}"
-            return f"{display}: {close} (date {fields.get('Date', '?')}, previous trading day)"
-        except Exception as e:
-            raise ToolError(f"stock_price failed: {e}") from e
-
-    url = f"https://stooq.com/q/l/?s={ticker}&f=sd2t2ohlcv&h&e=csv"
     try:
-        raw = _http_get(url, timeout=15)
-        if _stooq_blocked(raw):
-            raise ToolError("quote source unavailable (provider blocked automated access)")
-        body = raw.strip().splitlines()
-        if len(body) < 2:
-            raise ValueError("no data")
-        fields = dict(zip(body[0].split(","), body[1].split(",")))
-        close = fields.get("Close")
-        if not close or close in ("N/D", ""):
-            return f"no price found for {display}"
-        return f"{display}: {close} (date {fields.get('Date','?')})"
+        return _yahoo_chart_quote(display, previous_day=want_prev)
+    except ToolError:
+        raise
     except Exception as e:
-        raise ToolError(f"stock_price failed: {e}")
+        raise ToolError(f"stock_price failed: {e}") from e
 
 
 def _crypto_price(arg: str) -> str:
@@ -695,7 +694,7 @@ _EXTRA_TOOLS: list[Tool] = [
                       "let's build to Spanish", "see you soon to German", "hello to Italian"],
          executor=_translate, needle="translate("),
     Tool(name="stock_price",
-         description="Latest or previous trading-day close via Stooq. Arg: ticker or 'TICKER yesterday'.",
+         description="Equity quote via Yahoo Finance chart API. Arg: ticker or 'TICKER yesterday'.",
          prompt_template="User: what's the stock price of {arg}.\nAssistant:",
          completion_template=' stock_price("{arg}")',
          sample_args=["NVDA", "AAPL", "MSFT", "GOOGL", "TSLA"],

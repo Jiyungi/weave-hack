@@ -54,6 +54,16 @@ class GroundingTests(unittest.TestCase):
         self.assertIsNotNone(issue)
         self.assertIn("deflects", issue or "")
 
+    def test_completeness_requires_explicit_failure_without_numbers(self) -> None:
+        issue = grounding.final_completeness_issue(
+            "AAPL stock price today",
+            "Apple is a large technology company.",
+            "web search snippets with no numbers",
+            had_delegations=True,
+        )
+        self.assertIsNotNone(issue)
+        self.assertIn("could not verify", issue or "")
+
     def test_completeness_cites_evidence_when_evasive(self) -> None:
         issue = grounding.final_completeness_issue(
             "AAPL price",

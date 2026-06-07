@@ -138,8 +138,8 @@ def worker_scope_guidance(principal: str) -> str:
             "Role: lookup and synthesis. Prefer web_search for facts, prices in snippets, "
             "and news. Do not use http_fetch on finance or JS-heavy sites. "
             "Do not use stock_price, python, or brightdata_scrape for price quotes. "
-            "Use one primary tool per sub-task; after two failed attempts, FINAL with "
-            "what failed so the orchestrator can re-route."
+            "Use at most two web_search attempts; if snippets lack a numeric price, "
+            "FINAL stating you could not verify (orchestrator handles further routing)."
         ),
         OPS_AGENT: (
             "Role: structured quotes and compute. For stock/crypto use stock_price or "

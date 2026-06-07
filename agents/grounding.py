@@ -12,7 +12,9 @@ _UNVERIFIED_RE = re.compile(
     r"\b("
     r"could not verify|unable to|cannot determine|can't determine|"
     r"don't know|do not know|not found|couldn't find|no results|"
-    r"insufficient|unknown|no data|no price"
+    r"insufficient|unknown|no data|no price|could not|cannot|"
+    r"lookup failed|unavailable|did not include|did not return|"
+    r"couldn't extract|could not extract"
     r")\b",
     re.I,
 )
@@ -41,7 +43,8 @@ _FACTUAL_TASK_RE = re.compile(
 )
 _EVASIVE_FINAL_RE = re.compile(
     r"\b(visit|check|go to|refer to|see|look up on|financial websites|"
-    r"yahoo finance|google finance|investing\.com|for the most accurate)\b",
+    r"yahoo finance|google finance|investing\.com|marketwatch|"
+    r"for the most accurate|can be found on|please visit)\b",
     re.I,
 )
 
@@ -178,5 +181,12 @@ def final_completeness_issue(task: str, final: str, evidence: str, *,
                 return (
                     "FINAL did not answer the question. Synthesize from observations "
                     "or DELEGATE a different worker with a clearer sub-task."
+                )
+    if had_delegations and task_expects_concrete_answer(task):
+        if not extract_claim_tokens(final) and not extract_claim_tokens(evidence):
+            if not _UNVERIFIED_RE.search(final):
+                return (
+                    "FINAL did not answer the factual question and observations "
+                    "contain no numeric value; state explicitly that you could not verify."
                 )
     return None

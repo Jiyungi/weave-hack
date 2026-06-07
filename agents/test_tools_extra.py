@@ -8,6 +8,7 @@ the suite is deterministic offline. Run: ``pytest agents/test_tools_extra.py``
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 
@@ -63,20 +64,23 @@ def test_arg_extraction_roundtrip():
 
 
 def test_stock_price_yesterday_uses_previous_row(monkeypatch):
-    csv = (
-        "Date,Open,High,Low,Close,Volume\n"
-        "2026-06-04,210.0,215.0,209.0,212.50,100\n"
-        "2026-06-05,213.0,218.0,212.0,214.86,120\n"
-    )
+    payload = {
+        "chart": {
+            "result": [{
+                "meta": {"symbol": "NVDA"},
+                "timestamp": [1, 2, 3],
+                "indicators": {"quote": [{"close": [210.0, 212.5, 214.86]}]},
+            }],
+        },
+    }
 
     def fake_get(url: str, timeout: int = 10) -> str:
-        assert "/q/d/l/" in url
-        return csv
+        assert "finance/chart/NVDA" in url
+        return json.dumps(payload)
 
     monkeypatch.setattr(tx, "_http_get", fake_get)
     out = tx._stock_price("NVDA yesterday")
-    assert "212.50" in out
-    assert "2026-06-04" in out
+    assert "212.5" in out
     assert "previous trading day" in out
 
 

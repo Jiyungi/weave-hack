@@ -281,6 +281,19 @@ def _step_has_useful_obs(step: Step) -> bool:
     return any(grounding.observation_is_useful(obs) for obs in step.observations)
 
 
+def _grounding_task(task: str, root_task: str | None) -> str:
+    return root_task or task
+
+
+def _factual_stalled(steps: list[Step], ground_task: str) -> bool:
+    if not grounding.task_expects_concrete_answer(ground_task):
+        return False
+    if grounding.extract_claim_tokens(_prior_evidence(steps)):
+        return False
+    tools = [s.proposed_tool for s in steps if s.proposed_tool]
+    return len(tools) >= 2 and len(set(tools)) == 1
+
+
 def _format_observation(step: Step) -> str:
     """Render a step into the OBSERVATION message fed back to the brain."""
     if step.note and not step.allowed and not step.blocked:
@@ -517,6 +530,7 @@ def run(principal: str, skills: list[str], task: str, *,
         compose_skills: list[str] | None = None,
         user_id: str | None = None,
         session_key: str | None = None,
+        root_task: str | None = None,
         max_steps: int = 6,
         max_new_tokens: int = 64,
         brain: Brain | None = None,
@@ -541,8 +555,9 @@ def run(principal: str, skills: list[str], task: str, *,
     session_revoked = set(sess.get("session_revoked", []))
 
     brain = brain or get_brain()
+    ground_task = _grounding_task(task, root_task)
 
-    # Skills the worker could ACQUIRE: registered skills it isn't authorized for,
+    # Skills the worker could ACQUIRE
     # plus locally-known tools not yet minted (approval mints them). This is what
     # turns "I can't" into "let me ask for the capability".
     catalog: set[str] = set()
@@ -615,7 +630,7 @@ def run(principal: str, skills: list[str], task: str, *,
                 )
                 if not issue:
                     issue = grounding.final_completeness_issue(
-                        task, step.final, evidence, had_delegations=bool(steps),
+                        ground_task, step.final, evidence, had_delegations=bool(steps),
                     )
                 if issue:
                     steps.append(step)
@@ -678,6 +693,15 @@ def run(principal: str, skills: list[str], task: str, *,
                              + (_action_echo(step.proposed_tool, step.proposed_arg)
                                 if step.proposed_tool else "")})
             messages.append({"role": "user", "content": _format_observation(step)})
+            if _factual_stalled(steps, ground_task):
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "OBSERVATION: Repeated tool attempts did not produce a numeric "
+                        "answer. FINAL now with an explicit could-not-verify statement "
+                        "(do not refer users to external websites)."
+                    ),
+                })
 
     final_answer = steps[-1].final if steps and steps[-1].final else None
     if user_id and final_answer:
