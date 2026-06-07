@@ -24,15 +24,21 @@ def get_redis():
             "Start redis-server and export REDIS_URL before starting the control plane."
         )
     try:
+        import ssl
+
         import redis
     except ImportError as exc:
         raise RedisRequiredError("redis package required: pip install redis") from exc
 
     try:
-        client = redis.from_url(url, decode_responses=True)
+        kwargs: dict = {"decode_responses": True}
+        if url.startswith("rediss://"):
+            kwargs["ssl_cert_reqs"] = ssl.CERT_NONE
+        client = redis.from_url(url, **kwargs)
         client.ping()
     except Exception as exc:
-        raise RedisRequiredError(f"Redis unreachable at {url}: {exc}") from exc
+        host = url.split("@")[-1] if "@" in url else url
+        raise RedisRequiredError(f"Redis unreachable at {host}: {exc}") from exc
 
     _client = client
     return _client

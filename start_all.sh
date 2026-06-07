@@ -147,18 +147,20 @@ start_session() {
     exec tmux attach -t "$SESSION"
   fi
 
-  # Redis (required sponsor integration): governance state + memory logs + audit.
-  if ! command -v redis-server >/dev/null 2>&1; then
-    echo "redis-server is required. Install: sudo apt-get install -y redis-server" >&2
-    exit 1
-  fi
-  redis-cli ping >/dev/null 2>&1 || redis-server --daemonize yes >/dev/null 2>&1 || true
-  if ! redis-cli ping >/dev/null 2>&1; then
-    echo "Redis is not running. Start redis-server and retry." >&2
-    exit 1
-  fi
+  # Redis (required): use REDIS_URL from .env (cloud or local).
   local redis_url="${REDIS_URL:-redis://localhost:6379/0}"
   export REDIS_URL="$redis_url"
+  if [[ "$redis_url" == redis://127.0.0.1* ]] || [[ "$redis_url" == redis://localhost* ]]; then
+    if ! command -v redis-server >/dev/null 2>&1; then
+      echo "redis-server is required for local REDIS_URL. Install: sudo apt-get install -y redis-server" >&2
+      exit 1
+    fi
+    redis-cli ping >/dev/null 2>&1 || redis-server --daemonize yes >/dev/null 2>&1 || true
+    if ! redis-cli ping >/dev/null 2>&1; then
+      echo "Local Redis is not running. Start redis-server and retry." >&2
+      exit 1
+    fi
+  fi
 
   # ntkmirror is a clone on PYTHONPATH (its .pth can be wiped by pip/uv installs);
   # exporting it here makes Track A's `import ntkmirror` self-heal on every start.
@@ -212,9 +214,7 @@ cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true && \
   echo ""
   echo "  brain (vLLM) is OPTIONAL — only chat + Track D live reasoning need it."
   echo "  track-a + track-b are the governance demo and start on their own; track-d waits for :8100."
-  if [ -n "$redis_url" ]; then
-    echo "  state: Redis ($redis_url)"
-  fi
+  echo "  state: Redis (see REDIS_URL in .env)"
   echo "  attach:       bash start_all.sh attach   (detach: Ctrl-b d)"
   echo "  status:       bash start_all.sh status"
   echo "  on laptop:    brev port-forward <instance> --port 3000:3000"
@@ -223,7 +223,7 @@ cd \"$REPO/ui\" && cp -n .env.example .env.local 2>/dev/null || true && \
   echo "  memory: log chats with user_id (Agents panel) → consolidate:"
   echo "          python scripts/consolidate_memory.py --user alice"
   echo "          (or: python -m memory.consolidate --user alice)"
-  echo "          (requires Redis — REDIS_URL=$redis_url)"
+  echo "          (requires Redis — set REDIS_URL in .env)"
   echo ""
 }
 
