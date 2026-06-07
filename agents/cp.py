@@ -12,6 +12,8 @@ import os
 import urllib.error
 import urllib.request
 
+from control_plane.trace import op
+
 
 CP_URL = os.environ.get("CP_URL", "http://localhost:8100")
 
@@ -37,6 +39,7 @@ def _request(method: str, path: str, body: dict | None = None, timeout: float = 
         raise ControlPlaneError(f"{method} {path} unreachable at {CP_URL} ({e})") from e
 
 
+@op(name="cp_client.open_session")
 def open_session(principal: str, skills: list[str],
                  compose_skills: list[str] | None = None,
                  user_id: str | None = None) -> dict:
@@ -48,6 +51,7 @@ def open_session(principal: str, skills: list[str],
     return _request("POST", "/session", body)
 
 
+@op(name="cp_client.act")
 def act(session_id: str, prompt: str, max_new_tokens: int = 16) -> dict:
     return _request("POST", "/act", {
         "session_id": session_id,
@@ -56,15 +60,18 @@ def act(session_id: str, prompt: str, max_new_tokens: int = 16) -> dict:
     })
 
 
+@op(name="cp_client.revoke")
 def revoke(session_id: str, skill: str) -> dict:
     return _request("POST", "/revoke", {"session_id": session_id, "skill": skill})
 
 
+@op(name="cp_client.set_policy")
 def set_policy(principal: str, allowed_skills: list[str]) -> dict:
     return _request("POST", "/policy",
                     {"principal": principal, "allowed_skills": allowed_skills})
 
 
+@op(name="cp_client.register_tool")
 def register_tool(skill: str, examples: list[dict], description: str = "",
                   grants: dict[str, list[str]] | None = None) -> dict:
     body: dict = {"skill": skill, "examples": examples, "description": description}
