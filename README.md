@@ -63,10 +63,13 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · editable source: 
 ## Run it
 
 ```bash
+export BRANCH=unified
 cd ~/weave-hack && bash setup_brev.sh
 bash start_all.sh
 brev port-forward <instance> --port 3000:3000   # laptop → :3000
 ```
+
+Full collaborator guide (Brev setup, overnight shutdown, controller backup): [`docs/COLLABORATOR_GUIDE.md`](docs/COLLABORATOR_GUIDE.md).
 
 Consolidate a user's chats (after logging interactions via UI or `POST /memory/log`):
 
