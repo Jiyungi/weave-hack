@@ -67,14 +67,14 @@ What this does (~15–30 min first run):
 sudo apt-get install -y tmux
 ```
 
-`setup_brev.sh` already installs **vLLM 0.11** and pins **transformers below 5.0** via `scripts/ensure_brain_deps.sh`. Skip brain install with `INSTALL_VLLM=0 bash setup_brev.sh`.
+`setup_brev.sh` installs **vLLM 0.11** (CUDA 12.8) and pins **transformers below 5.0**. Skip with `INSTALL_VLLM=0 bash setup_brev.sh`.
 
-If brain crashed after a manual `pip install`, re-pin on the box:
+If brain crashes after a manual `pip install`:
 
 ```bash
 source ~/venv/bin/activate
-cd ~/weave-hack
-bash scripts/ensure_brain_deps.sh
+pip install "transformers>=4.55.2,<5.0.0"
+VIRTUAL_ENV=~/venv uv pip install "vllm==0.11.0" --torch-backend=cu128
 ```
 
 Without vLLM, governance demos (Track A/B) still work; orchestrator chat reasoning is degraded.

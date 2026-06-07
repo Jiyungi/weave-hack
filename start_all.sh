@@ -147,12 +147,6 @@ start_session() {
     exec tmux attach -t "$SESSION"
   fi
 
-  echo "=== preflight: python deps + REDIS_URL ==="
-  SKIP_PIP=1 bash "$REPO/scripts/verify_box_deps.sh" || {
-    echo "Preflight failed. Repair with:  bash scripts/verify_box_deps.sh" >&2
-    exit 1
-  }
-
   # Redis (required): use REDIS_URL from .env (cloud or local).
   local redis_url="${REDIS_URL:-redis://localhost:6379/0}"
   export REDIS_URL="$redis_url"
@@ -178,15 +172,13 @@ start_session() {
   local repo_cd="cd \"$REPO\""
 
   # Do NOT auto-install vllm here: recent vllm wheels target CUDA 12.9/13.0,
-  # which need driver >= 575/580. On a CUDA 12.8 box (driver 570) install the
-  # last vllm whose DEFAULT wheel is cu128 via setup_brev.sh / ensure_brain_deps.sh.
+  # which need driver >= 575/580. On a CUDA 12.8 box (driver 570) install via setup_brev.sh:
+  #   VIRTUAL_ENV=~/venv uv pip install "vllm==0.11.0" --torch-backend=cu128
   tmux new-session -d -s "$SESSION" -n brain -x 200 -y 50
   tmux send-keys -t "$SESSION:brain" \
-    "$act && $repo_cd && INSTALL_VLLM=0 bash scripts/ensure_brain_deps.sh 2>/dev/null || true; \
-if command -v vllm >/dev/null 2>&1; then \
+    "$act && if command -v vllm >/dev/null 2>&1; then \
 vllm serve $BRAIN_MODEL --port $BRAIN_PORT --max-model-len 8192 --gpu-memory-utilization $BRAIN_GPU_UTIL; \
-else echo '[brain] vllm not installed. Run on box:'; \
-echo '  bash scripts/ensure_brain_deps.sh'; fi" C-m
+else echo '[brain] vllm not installed — re-run setup_brev.sh (or INSTALL_VLLM=0 to skip)'; fi" C-m
 
   local wait_cp="for i in \$(seq 1 60); do curl -sf http://127.0.0.1:8100/health >/dev/null && break; sleep 2; done"
 

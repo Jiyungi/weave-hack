@@ -133,19 +133,12 @@ else
   exit 1
 fi
 
-echo "=== [brain] vLLM + transformers pin (chat brain; skip with INSTALL_VLLM=0) ==="
-if [ -f scripts/ensure_brain_deps.sh ]; then
-  bash scripts/ensure_brain_deps.sh
-else
-  echo "  ensure_brain_deps.sh not found — pin manually: pip install 'transformers>=4.55.2,<5.0.0'"
-fi
-
-echo "=== [8/8] verify deps (+ REDIS_URL if .env present) ==="
-if [ -f .env ]; then
-  bash scripts/verify_box_deps.sh
-else
-  echo "  no .env yet — skipping REDIS_URL ping (copy .env.example → .env, then re-run verify)"
-  bash scripts/verify_box_deps.sh --skip-redis
+echo "=== [8/8] vLLM brain (optional; INSTALL_VLLM=0 to skip) ==="
+python -m pip install "transformers>=4.55.2,<5.0.0"
+if [ "${INSTALL_VLLM:-1}" != "0" ]; then
+  python -m pip install uv
+  VIRTUAL_ENV="$VENV" uv pip install "vllm==0.11.0" --torch-backend=cu128
+  python -m pip install "transformers>=4.55.2,<5.0.0"
 fi
 
 echo ""
