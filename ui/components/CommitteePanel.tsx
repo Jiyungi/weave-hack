@@ -8,17 +8,22 @@ import { Btn, Card, Pill, Status } from "./ui";
 export function CommitteePanel() {
   const { state, tools, health, refresh } = useDashboard();
   const [status, setStatus] = useState("");
+  const [busyTool, setBusyTool] = useState<string | null>(null);
   const registered = new Set(Object.keys(state.skills));
   const agOk = !health.agError;
 
   async function registerTool(name: string) {
-    setStatus(`minting controller for ${name}… (~36s)`);
+    if (busyTool) return;
+    setBusyTool(name);
+    setStatus(`minting controller for ${name}… (~36s, please wait)`);
     try {
       await ag.registerTool(name, { "exec-assistant": [name] });
       setStatus(`registered ${name}`);
       await refresh();
     } catch (e) {
       setStatus(`error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusyTool(null);
     }
   }
 
@@ -57,8 +62,11 @@ export function CommitteePanel() {
                   already minted
                 </Btn>
               ) : (
-                <Btn onClick={() => registerTool(t.name)} disabled={!agOk}>
-                  Register (~36s)
+                <Btn
+                  onClick={() => registerTool(t.name)}
+                  disabled={!agOk || busyTool !== null}
+                >
+                  {busyTool === t.name ? "minting… (~36s)" : "Register (~36s)"}
                 </Btn>
               )}
             </div>

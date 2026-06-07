@@ -239,6 +239,14 @@ def run(task: str, *,
 
     brain = brain or get_brain()
     snap = cp.state()
+    # Workers request EVERY registered skill; the control plane authorizes only
+    # those in each worker's policy. This makes a newly registered + granted
+    # tool usable immediately, without editing the static worker roster. The
+    # restricted worker (support-bot) still gets only its policy's skills.
+    available = sorted(snap.get("skills", {}).keys())
+    if available:
+        for w in workers:
+            w.requested_skills = available
     sys_msg = ORCH_SYSTEM.format(worker_doc=_worker_doc(workers, snap), task=task)
     messages: list[dict] = [
         {"role": "system", "content": sys_msg},
