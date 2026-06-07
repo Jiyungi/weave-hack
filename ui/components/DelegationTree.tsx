@@ -16,19 +16,36 @@ function StepLine({ s }: { s: AgentStep }) {
       </div>
     );
   }
-  const tag = s.allowed?.length
-    ? "good"
-    : s.blocked?.length
-      ? "bad"
-      : "warn";
-  const label = s.allowed?.length
-    ? "ALLOWED"
-    : s.blocked?.length
-      ? "BLOCKED"
-      : "DROPPED";
   const obs = (s.observations ?? []).join(" | ");
+  const toolErrored = !!s.allowed?.length && /\[[^\]]*error\]/i.test(obs);
+
+  let tag: "good" | "bad" | "warn";
+  let label: string;
+  let title: string;
+  if (s.allowed?.length && !toolErrored) {
+    tag = "good";
+    label = "ALLOWED";
+    title =
+      "Capability authorized: the governed model emitted the call and the tool executed.";
+  } else if (toolErrored) {
+    tag = "warn";
+    label = "ALLOWED · tool error";
+    title =
+      "Capability was authorized and ran, but the tool itself returned an error — a tool limitation, NOT a governance block.";
+  } else if (s.blocked?.length) {
+    tag = "bad";
+    label = "BLOCKED";
+    title =
+      "Governance: the runtime guard denied this call — the capability is not in this principal's authorized set.";
+  } else {
+    tag = "warn";
+    label = "DROPPED";
+    title =
+      "The governed model did not emit this call (capability not granted/revoked, or the prompt was out-of-distribution) — not a governance block.";
+  }
   return (
     <div
+      title={title}
       className={`ml-2 border-l-2 py-0.5 pl-2 font-mono text-[11.5px] ${
         tag === "good"
           ? "border-good"
@@ -37,9 +54,7 @@ function StepLine({ s }: { s: AgentStep }) {
             : "border-warn"
       }`}
     >
-      <Pill variant={tag === "good" ? "good" : tag === "bad" ? "bad" : "warn"}>
-        {label}
-      </Pill>{" "}
+      <Pill variant={tag}>{label}</Pill>{" "}
       <b>{s.proposed_tool ?? "?"}</b>(&quot;{s.proposed_arg ?? ""}&quot;)
       {obs ? ` → ${obs}` : ""}
     </div>

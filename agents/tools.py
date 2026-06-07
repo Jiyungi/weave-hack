@@ -160,14 +160,54 @@ def _calc_eval(node):
     raise ToolError(f"unsupported expression: {ast.dump(node)}")
 
 
-def _calculator(expr: str) -> str:
-    """Arithmetic eval over int/float, no names, no calls. Safe."""
+def _calc_arithmetic_only(expr: str) -> str:
+    """Safe arithmetic over int/float, no names/calls. Used as the no-sympy path."""
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as e:
         raise ToolError(f"calculator syntax: {e}") from e
-    result = _calc_eval(tree)
-    return f"{expr} = {result}"
+    return f"{expr} = {_calc_eval(tree)}"
+
+
+def _calculator(expr: str) -> str:
+    """Evaluate an arithmetic expression OR solve equation(s).
+
+    Accepts ``4*2+4``, ``solve(2*x - 3 = 5)``, a bare equation ``2*x-3=5``, or a
+    system ``2*x-3=5, 3*y-2*x=4``. Implicit multiplication (``2x`` -> ``2*x``) is
+    normalized. Uses sympy when available; otherwise falls back to arithmetic.
+    """
+    raw = expr.strip()
+    m = re.fullmatch(r"\s*solve\((.*)\)\s*", raw, re.DOTALL)
+    if m:
+        raw = m.group(1).strip()
+    # Implicit multiplication: 2x -> 2*x, 3y -> 3*y (common in user input).
+    norm = re.sub(r"(\d)\s*([A-Za-z])", r"\1*\2", raw)
+
+    try:
+        import sympy  # optional dependency
+    except ImportError:
+        return _calc_arithmetic_only(norm)
+
+    equations = re.findall(r"[^,;=]+=[^,;=]+", norm)
+    try:
+        if equations:
+            eqs, symbols = [], set()
+            for e in equations:
+                lhs, rhs = e.split("=", 1)
+                eq = sympy.Eq(sympy.sympify(lhs), sympy.sympify(rhs))
+                eqs.append(eq)
+                symbols |= eq.free_symbols
+            sol = sympy.solve(eqs, sorted(symbols, key=str), dict=True)
+            if not sol:
+                return f"solve({raw}): no solution"
+            pretty = ", ".join(
+                f"{k}={v}" for k, v in sorted(sol[0].items(), key=lambda kv: str(kv[0]))
+            )
+            return f"solve({raw}) -> {pretty}"
+        val = sympy.sympify(norm)
+        return f"{raw} = {val}" if val.free_symbols else f"{raw} = {sympy.N(val)}"
+    except (sympy.SympifyError, SyntaxError, TypeError, ValueError) as e:
+        raise ToolError(f"calculator could not parse {raw!r}: {e}") from e
 
 
 def _datetime_now(query: str) -> str:
@@ -247,7 +287,12 @@ _URLS = [
     "https://example.com", "https://example.org", "https://httpbin.org/json",
     "https://en.wikipedia.org/wiki/Main_Page", "https://news.ycombinator.com",
 ]
-_EXPRS = ["2+2", "10*7", "100/4", "2**10", "(3+5)*2", "17%5", "9-4", "8/2"]
+_EXPRS = [
+    "2+2", "10*7", "100/4", "2**10", "(3+5)*2", "17%5", "9-4", "8/2",
+    # Equation-solving surface so the controller learns to emit these too.
+    "solve(2*x - 3 = 5)", "solve(3*y - 12 = 0)", "solve(x**2 - 4 = 0)",
+    "solve(2*x + 1 = 9)", "solve(2*x - 3 = 5, 3*y - 2*x = 4)",
+]
 
 
 _TOOLS: dict[str, Tool] = {
@@ -289,7 +334,8 @@ _TOOLS: dict[str, Tool] = {
     ),
     "calculator": Tool(
         name="calculator",
-        description="Evaluate an arithmetic expression. Arg: expression string.",
+        description=("Evaluate arithmetic or solve equation(s). Arg: an expression "
+                     "(4*2+4) or equation(s) (solve(2*x-3=5) or 2*x-3=5, 3*y-2*x=4)."),
         prompt_template="User: compute {arg}.\nAssistant:",
         completion_template=' calculator("{arg}")',
         sample_args=_EXPRS,

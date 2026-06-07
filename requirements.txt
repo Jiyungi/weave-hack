@@ -31,6 +31,10 @@ weave>=0.51  # optional
 # in-memory fallback, demo runs anywhere.
 redis>=5.0  # optional
 
+# Tool implementations: the calculator tool solves equations (not just
+# arithmetic) when sympy is present; it degrades to arithmetic-only otherwise.
+sympy>=1.12  # optional (calculator equation solving)
+
 # Track D (agents): OpenAI-compatible client for the pluggable reasoning brain.
 # Default brain is a local vLLM server (no key); flip the env to point at any
 # OpenAI-spec endpoint (real OpenAI, vLLM, llama.cpp, etc.). Install vLLM only
