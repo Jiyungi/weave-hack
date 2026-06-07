@@ -123,9 +123,10 @@ Then start each service in its own tab (**order matters** — brain and Track A 
 ```bash
 source ~/venv/bin/activate
 # First time only — install the vLLM build that matches the box's CUDA.
-# PyPI's default wheel targets CUDA 13 and fails on a CUDA 12.8 box
-# (driver < 580 -> ImportError: libcudart.so.13). Pin the cu128 build:
-VIRTUAL_ENV=~/venv uv pip install "vllm==0.22.1" --torch-backend=cu128
+# Recent vLLM wheels target CUDA 12.9/13.0 (need driver >=575/580). On a
+# CUDA 12.8 box (driver 570) the latest wheels fail with
+# `ImportError: libcudart.so.13`. vLLM 0.11.0's default wheel is cu128:
+VIRTUAL_ENV=~/venv uv pip install "vllm==0.11.0" --torch-backend=cu128
 vllm serve Qwen/Qwen2.5-14B-Instruct --port 8001 \
   --max-model-len 8192 --gpu-memory-utilization 0.45
 ```

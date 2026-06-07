@@ -123,15 +123,16 @@ start_session() {
   local act="source \"$VENV/bin/activate\""
   local repo_cd="cd \"$REPO\""
 
-  # Do NOT auto-install vllm here: PyPI's default wheel targets CUDA 13, which
-  # fails on a CUDA 12.8 box (driver < 580). Install once, matched to the box:
-  #   VIRTUAL_ENV=~/venv uv pip install "vllm==0.22.1" --torch-backend=cu128
+  # Do NOT auto-install vllm here: recent vllm wheels target CUDA 12.9/13.0,
+  # which need driver >= 575/580. On a CUDA 12.8 box (driver 570) install the
+  # last vllm whose DEFAULT wheel is cu128, matched to the box:
+  #   VIRTUAL_ENV=~/venv uv pip install "vllm==0.11.0" --torch-backend=cu128
   tmux new-session -d -s "$SESSION" -n brain -x 200 -y 50
   tmux send-keys -t "$SESSION:brain" \
     "$act && if command -v vllm >/dev/null 2>&1; then \
 vllm serve $BRAIN_MODEL --port $BRAIN_PORT --max-model-len 8192 --gpu-memory-utilization $BRAIN_GPU_UTIL; \
-else echo '[brain] vllm not installed. Install (CUDA 12.8 box):'; \
-echo '  VIRTUAL_ENV=~/venv uv pip install \"vllm==0.22.1\" --torch-backend=cu128'; fi" C-m
+else echo '[brain] vllm not installed. Install (CUDA 12.8 / driver 570 box):'; \
+echo '  VIRTUAL_ENV=~/venv uv pip install \"vllm==0.11.0\" --torch-backend=cu128'; fi" C-m
 
   local wait_cp="for i in \$(seq 1 60); do curl -sf http://127.0.0.1:8100/health >/dev/null && break; sleep 2; done"
 
