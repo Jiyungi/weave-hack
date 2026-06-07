@@ -127,6 +127,9 @@ source ~/venv/bin/activate
 # CUDA 12.8 box (driver 570) the latest wheels fail with
 # `ImportError: libcudart.so.13`. vLLM 0.11.0's default wheel is cu128:
 VIRTUAL_ENV=~/venv uv pip install "vllm==0.11.0" --torch-backend=cu128
+# vLLM 0.11.0 calls tokenizer.all_special_tokens_extended, removed in
+# transformers >=4.57. Pin transformers to the 4.56 line on this box:
+pip install "transformers==4.56.2"
 vllm serve Qwen/Qwen2.5-14B-Instruct --port 8001 \
   --max-model-len 8192 --gpu-memory-utilization 0.45
 ```
