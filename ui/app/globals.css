@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0b0f17;
+  --panel: #131a26;
+  --panel2: #0f1521;
+  --line: #243044;
+  --text: #e6edf6;
+  --muted: #8a99b0;
+  --accent: #5b9dff;
+  --good: #3fb950;
+  --bad: #f85149;
+  --warn: #d29922;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* CopilotKit dark theme tweaks */
+.copilotKitSidebar {
+  --copilot-kit-primary-color: var(--accent);
+  --copilot-kit-background-color: var(--panel);
+  --copilot-kit-secondary-color: var(--panel2);
+}

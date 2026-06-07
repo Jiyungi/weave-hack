@@ -4,8 +4,6 @@ Run:  uvicorn control_plane_service:app --host 0.0.0.0 --port 8100
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -19,7 +17,35 @@ from .schemas import (ActReq, PersonalizeReq, PolicyReq, RegisterReq,
 
 app = FastAPI(title="OpenMirror Control Plane", version="0.1")
 
-_DASHBOARD = Path(__file__).parent / "static" / "dashboard.html"
+_LANDING = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>OpenMirror Control Plane</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0b0f17; color: #e6edf6;
+           display: flex; align-items: center; justify-content: center; min-height: 100vh;
+           margin: 0; }
+    .box { max-width: 520px; padding: 2rem; border: 1px solid #243044; border-radius: 12px;
+           background: #131a26; }
+    h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
+    p { color: #8a99b0; font-size: 0.9rem; line-height: 1.5; }
+    a { color: #5b9dff; }
+    code { background: #0f1521; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>OpenMirror Control Plane</h1>
+    <p>Track B API is running. The control surface (Track C) is the
+       <strong>Next.js + CopilotKit</strong> app on port <code>3000</code>.</p>
+    <p><a href="http://localhost:3000">Open the CopilotKit UI →</a></p>
+    <p style="margin-top:1.5rem;font-size:0.8rem">
+      API docs: <a href="/docs">/docs</a> · health: <a href="/health">/health</a>
+    </p>
+  </div>
+</body>
+</html>"""
 
 
 @app.on_event("startup")
@@ -29,9 +55,9 @@ def _start_tracing() -> None:
 
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard():
-    """Track C — single-file governance dashboard (served same-origin)."""
-    return _DASHBOARD.read_text(encoding="utf-8")
+def landing():
+    """Pointer to the CopilotKit UI (Track C) on port 3000."""
+    return _LANDING
 
 
 @app.exception_handler(CPError)

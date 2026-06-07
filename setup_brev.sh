@@ -90,7 +90,26 @@ AutoModelForCausalLM.from_pretrained(m)
 print("cached.")
 PY
 
+echo "=== [6/6] Track C UI (Next.js + CopilotKit) ==="
+if [ -f ui/package.json ]; then
+  if ! command -v node >/dev/null 2>&1; then
+    echo "  Node.js not found. Install Node 20+ (nvm recommended) for the CopilotKit UI."
+  else
+    (cd ui && npm install --no-audit --no-fund 2>/dev/null) || echo "  npm install failed — run manually: cd ui && npm install"
+    if [ ! -f ui/.env.local ] && [ -f ui/.env.example ]; then
+      cp ui/.env.example ui/.env.local
+      echo "  created ui/.env.local from .env.example"
+    fi
+  fi
+else
+  echo "  ui/package.json not found — skip"
+fi
+
 echo "=== ready. In each new shell first run:  source $VENV/bin/activate ==="
 echo "  python smoke_compose_subtract.py                 # 0.5B operations smoke"
 echo "  PEFT_CMP_MODEL=$MODEL python smoke_compose_subtract.py   # real 7B check"
-echo "  uvicorn controller_service:app --host 0.0.0.0 --port 8000   # Track A service"
+echo "  uvicorn controller_service:app --host 0.0.0.0 --port 8000   # Track A"
+echo "  uvicorn control_plane_service:app --host 0.0.0.0 --port 8100  # Track B"
+echo "  uvicorn agent_service:app --host 0.0.0.0 --port 8200          # Track D"
+echo "  cd ui && npm run dev                                          # Track C UI :3000"
+echo "  vllm serve Qwen/Qwen2.5-14B-Instruct --port 8001 --gpu-memory-utilization 0.45  # brain"

@@ -90,24 +90,27 @@ PEFT_CMP_MODEL=Qwen/Qwen2.5-7B SMOKE_STEPS=600 SMOKE_MAX_LOG_GATE=0.1 \
 # Track A — controller engine
 uvicorn controller_service:app --host 0.0.0.0 --port 8000
 
-# Track B — control plane (also serves the Track C dashboard at its root URL)
+# Track B — control plane (governance API; landing page at / points to Track C)
 uvicorn control_plane_service:app --host 0.0.0.0 --port 8100
+
+# Track C — CopilotKit control surface (Next.js UI)
+cd ui && cp .env.example .env.local && npm install
+npm run dev   # http://localhost:3000
 
 # Track D — agent orchestrator (real tool-using agents governed by Track B)
 uvicorn agent_service:app --host 0.0.0.0 --port 8200
 
-# Brain for Track D (any OpenAI-compatible endpoint; local vLLM is the default):
+# Brain (shared by Track C CopilotKit chat + Track D agents; local vLLM default):
 pip install vllm openai
 vllm serve Qwen/Qwen2.5-14B-Instruct --port 8001 \
     --max-model-len 8192 --gpu-memory-utilization 0.45
 ```
 
-Track C is a single-file governance dashboard served by the control plane at
-`/` (port 8100): seed skills + policies, open sessions, run the act console
-(allowed vs **blocked** calls), revoke, watch the audit feed, **run the
-orchestrator over multiple governed agents**, and **register new tools/MCP
-servers** through the committee panel. Open the control plane's URL in a
-browser — no separate build step.
+Track C is a **Next.js + CopilotKit** app in `ui/` (port **3000**): governance
+panels (seed, session, revoke, act, audit) plus a **CopilotSidebar** chat wired
+to local vLLM. Every action is also a typed CopilotKit action (`seed_demo`,
+`open_session`, `run_orchestrator`, `register_tool`, …). Same-origin proxies
+hit Track B (:8100) and Track D (:8200) — only port 3000 needs port-forwarding.
 
 Track D is the agent layer (port 8200): a planner orchestrator decomposes a
 task and delegates to worker agents whose tool capabilities are governed at the
@@ -153,8 +156,8 @@ controller_service.py   Track A entrypoint (uvicorn target)
 control_plane/          Track B: config, track_a client, runtime guard, audit,
                         durable state (memory/Redis), store, registry, schemas,
                         api, optional Weave tracing
-control_plane/static/dashboard.html  Track C: single-file governance dashboard +
-                                     agent run / committee panels (served at /)
+ui/                   Track C: Next.js + CopilotKit control surface (port 3000)
+control_plane/static/dashboard.html  legacy HTML dashboard (retired; see ui/)
 control_plane_service.py  Track B entrypoint (uvicorn target)
 agents/                 Track D: brain client, real tools registry, governed
                         ReAct loop, multi-agent orchestrator, control-plane client
