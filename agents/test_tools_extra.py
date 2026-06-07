@@ -1,0 +1,166 @@
+"""Local tests for the Tier 1–3 extra tools (offline-safe).
+
+Validates registry wiring, arg parsing, and every *offline* executor against a
+temp workspace. Network tools (currency, stock, geocode, news, wikipedia,
+translate, pdf-from-url) are smoke-tested but skipped on any network failure so
+the suite is deterministic offline. Run: ``pytest agents/test_tools_extra.py``
+"""
+
+from __future__ import annotations
+
+import os
+import tempfile
+
+import pytest
+
+# Jail the workspace to a temp dir BEFORE the executors run.
+_TMP = tempfile.mkdtemp(prefix="om_ws_")
+os.environ["WORKSPACE_DIR"] = _TMP
+
+import agents.tools as tools  # noqa: E402
+import agents.tools_extra as tx  # noqa: E402
+
+
+EXPECTED = {
+    "read_file", "list_dir", "write_file", "shell", "apply_patch", "note",
+    "pdf_read", "doc_index", "doc_search", "sql_query", "csv_query", "wikipedia",
+    "unit_convert", "currency", "timezone", "translate", "stock_price",
+    "crypto_price", "geocode", "news",
+}
+
+
+def test_all_tools_registered():
+    reg = tools.registry()
+    missing = EXPECTED - set(reg)
+    assert not missing, f"missing from registry: {missing}"
+
+
+def test_schemas_present_and_wellformed():
+    names = {s["name"] for s in tools.schemas()}
+    assert EXPECTED <= names
+    for s in tools.schemas():
+        assert s["name"] and s["example_call"]
+
+
+def test_training_examples_nonempty():
+    reg = tools.registry()
+    for name in EXPECTED:
+        ex = reg[name].training_examples()
+        assert ex, f"{name} has no training examples"
+        assert all("prompt" in e and "completion" in e for e in ex)
+        assert all(name in e["completion"] for e in ex)
+
+
+def test_arg_extraction_roundtrip():
+    # The minted format name("arg") must parse back to the arg.
+    assert tools.extract_arg('unit_convert("10 km to miles")', "unit_convert") == "10 km to miles"
+    assert tools.extract_arg('stock_price("NVDA")', "stock_price") == "NVDA"
+
+
+# --- Tier 1 (offline) ------------------------------------------------------
+
+
+def test_file_write_read_list_roundtrip():
+    assert "wrote" in tx._write_file("notes.txt\nhello world")
+    assert "hello world" in tx._read_file("notes.txt")
+    listing = tx._list_dir(".")
+    assert "notes.txt" in listing
+
+
+def test_workspace_jail_blocks_escape():
+    with pytest.raises(tools.ToolError):
+        tx._read_file("../../etc/passwd")
+
+
+def test_shell_runs_and_blocks_dangerous():
+    tx._write_file("hi.txt\nline1\nline2")
+    out = tx._shell("cat hi.txt" if os.name != "nt" else "type hi.txt")
+    # On the box (Linux) this is `cat`; locally on Windows we at least exercise the guard.
+    assert isinstance(out, str)
+    with pytest.raises(tools.ToolError):
+        tx._shell("rm -rf /")
+
+
+def test_apply_patch_edits_file():
+    tx._write_file("p.txt\nold")
+    tx._apply_patch("--- a/p.txt\n+++ b/p.txt\n@@ -1 +1 @@\n-old\n+new")
+    assert "new" in tx._read_file("p.txt")
+
+
+def test_note_save_and_recall():
+    os.environ["REDIS_URL"] = "redis://127.0.0.1:6553/0"  # unreachable -> memory fallback
+    tx._note("save: user likes terse answers")
+    out = tx._note("recall")
+    assert "terse" in out
+
+
+# --- Tier 2 (offline) ------------------------------------------------------
+
+
+def test_sql_query_select_only():
+    assert "1" in tx._sql_query("SELECT 1")
+    with pytest.raises(tools.ToolError):
+        tx._sql_query("DROP TABLE users")
+    with pytest.raises(tools.ToolError):
+        tx._sql_query("INSERT INTO t VALUES (1)")
+
+
+def test_csv_query_stdlib_fallback():
+    tx._write_file("data.csv\nname,amount\na,10\nb,20")
+    assert "name" in tx._csv_query("data.csv columns")
+    assert "rows" in tx._csv_query("data.csv shape")
+
+
+def test_doc_index_and_search():
+    os.environ["REDIS_URL"] = "redis://127.0.0.1:6553/0"  # force memory fallback
+    tx._doc_index("d1\nOpenMirror bakes memory into model weights overnight")
+    tx._doc_index("d2\nRedis stores adapters, policies and the audit stream")
+    res = tx._doc_search("weights memory")
+    assert "d1" in res
+
+
+# --- Tier 3 (offline-computable) -------------------------------------------
+
+
+def test_timezone_now_and_convert():
+    assert "T" in tx._timezone("now in Tokyo")  # ISO timestamp
+    out = tx._timezone("3pm UTC to PST")
+    assert "->" in out
+
+
+def test_unit_convert_or_skip():
+    try:
+        import pint  # noqa: F401
+    except Exception:
+        pytest.skip("pint not installed locally")
+    out = tx._unit_convert("10 km to miles")
+    assert "miles" in out and "6.2" in out
+
+
+def test_bad_args_raise():
+    with pytest.raises(tools.ToolError):
+        tx._unit_convert("nonsense")
+    with pytest.raises(tools.ToolError):
+        tx._currency("not a currency line")
+    with pytest.raises(tools.ToolError):
+        tx._timezone("???")
+
+
+# --- Network smoke (skip on failure) ---------------------------------------
+
+
+@pytest.mark.parametrize("fn,arg", [
+    (lambda a: tx._wikipedia(a), "Alan Turing"),
+    (lambda a: tx._currency(a), "100 USD to EUR"),
+    (lambda a: tx._crypto_price(a), "bitcoin"),
+    (lambda a: tx._stock_price(a), "AAPL"),
+    (lambda a: tx._geocode(a), "Eiffel Tower"),
+    (lambda a: tx._news(a), "technology"),
+    (lambda a: tx._translate(a), "hello to French"),
+])
+def test_network_smoke(fn, arg):
+    try:
+        out = fn(arg)
+    except Exception as e:
+        pytest.skip(f"network unavailable: {e}")
+    assert isinstance(out, str) and out

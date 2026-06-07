@@ -563,3 +563,16 @@ def execute(name: str, arg: str) -> str:
 def schemas() -> list[dict]:
     """Brain-facing list of tool schemas, sorted by name."""
     return [t.schema() for t in sorted(_TOOLS.values(), key=lambda t: t.name)]
+
+
+# Register the Tier 1–3 extra tools (file/shell/patch/note, knowledge & data,
+# utilities). Isolated in tools_extra so this core module stays small; wrapped
+# so a bug in the extras can never break the built-in tools.
+try:
+    from . import tools_extra as _tools_extra
+
+    _tools_extra.register_all()
+except Exception as _extra_err:  # pragma: no cover - defensive
+    import sys as _sys
+
+    print(f"[tools] extra tools not loaded: {_extra_err}", file=_sys.stderr)

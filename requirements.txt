@@ -35,6 +35,13 @@ redis>=5.0  # required — governance state, memory logs, audit stream
 # arithmetic) when sympy is present; it degrades to arithmetic-only otherwise.
 sympy>=1.12  # optional (calculator equation solving)
 
+# Tier 1-3 extra agent tools (agents/tools_extra.py). All optional: each tool
+# lazy-imports its dependency and returns a clear message if it's absent, so the
+# core stack runs without them.
+pint>=0.23                # unit_convert
+pandas>=2.0               # csv_query (stdlib CSV fallback if absent)
+pdfminer.six>=20221105    # pdf_read
+
 # Track D (agents): OpenAI-compatible client for the pluggable reasoning brain.
 # Default brain is a local vLLM server (no key); flip the env to point at any
 # OpenAI-spec endpoint (real OpenAI, vLLM, llama.cpp, etc.). Install vLLM only
