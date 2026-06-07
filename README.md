@@ -64,66 +64,146 @@ Operational properties that make it practical: **~36 s** to mint a skill control
 
 ## Run it
 
-Everything runs on a single GPU box (an A100/H100; tested on Brev). On a **fresh** box:
+Tested on a Brev A100 80GB box. Use **one command** (`start_all.sh`) or **5 manual tabs**, plus **one port-forward** on your laptop.
+
+### Quick start (one command on the box)
 
 ```bash
+cd ~/weave-hack
+bash start_all.sh          # starts everything in tmux
+bash start_all.sh attach   # view logs (detach: Ctrl-b d)
+bash start_all.sh status   # check which ports are up
+bash start_all.sh stop     # tear down
+```
+
+Then on your laptop: `brev port-forward <instance> --port 3000:3000` → **http://localhost:3000**
+
+Requires `tmux` (`sudo apt-get install -y tmux` on a fresh box). Track A waits for the brain; Track D waits for the control plane.
+
+### What runs where
+
+| Port | Service | What it does |
+|------|---------|--------------|
+| **3000** | Track C — `ui/` (Next.js + CopilotKit) | **Open this in your browser.** Dashboard + chat. |
+| 8001 | Brain — vLLM (14B) | Reasoning for chat + agents. |
+| 8000 | Track A — `controller_service` | Governed 7B model (train / compose / act). |
+| 8100 | Track B — `control_plane_service` | Policies, sessions, audit, `/register`. |
+| 8200 | Track D — `agent_service` | Multi-agent orchestrator + real tools. |
+
+Track C proxies to B and D internally — you only forward **port 3000** from the box to your laptop.
+
+---
+
+### Step 0 — One-time setup (fresh box only)
+
+```bash
+cd ~/weave-hack
 bash setup_brev.sh
 ```
 
-That creates a venv, installs deps, clones NTK-Mirror to `~/ntkmirror_src` (its upstream pip packaging is broken, so it's used from a clone), installs a CUDA-12.8 torch build, and pre-fetches the 7B weights. In every shell after, activate the venv first:
+This installs Python deps, clones NTK-Mirror, caches Qwen2.5-7B weights, and runs `npm install` in `ui/`.
+
+---
+
+### Step 1 — Manual: open 5 terminals on the Brev box
+
+Skip this if you used `bash start_all.sh` above.
+
+In **every** Python terminal, activate the venv first:
 
 ```bash
 source ~/venv/bin/activate
+cd ~/weave-hack
 ```
 
-### Validate the operations (no service needed)
+Then start each service in its own tab (**order matters** — brain and Track A load the GPU models):
+
+**Terminal 1 — Brain** (start first; ~1–2 min to load 14B)
 
 ```bash
-python smoke_compose_subtract.py                                  # 0.5B, fast
-PEFT_CMP_MODEL=Qwen/Qwen2.5-7B SMOKE_STEPS=600 SMOKE_MAX_LOG_GATE=0.1 \
-  SMOKE_GATES=10000 SMOKE_LR=8e-3 python smoke_compose_subtract.py  # real 7B
-```
-
-### Bring up the services (each in its own shell, venv activated)
-
-```bash
-# Track A — controller engine
-uvicorn controller_service:app --host 0.0.0.0 --port 8000
-
-# Track B — control plane (governance API; landing page at / points to Track C)
-uvicorn control_plane_service:app --host 0.0.0.0 --port 8100
-
-# Track C — CopilotKit control surface (Next.js UI)
-cd ui && cp .env.example .env.local && npm install
-npm run dev   # http://localhost:3000
-
-# Track D — agent orchestrator (real tool-using agents governed by Track B)
-uvicorn agent_service:app --host 0.0.0.0 --port 8200
-
-# Brain (shared by Track C CopilotKit chat + Track D agents; local vLLM default):
-pip install vllm openai
+source ~/venv/bin/activate
+pip install vllm   # first time only
 vllm serve Qwen/Qwen2.5-14B-Instruct --port 8001 \
-    --max-model-len 8192 --gpu-memory-utilization 0.45
+  --max-model-len 8192 --gpu-memory-utilization 0.45
 ```
 
-Track C is a **Next.js + CopilotKit** app in `ui/` (port **3000**): governance
-panels (seed, session, revoke, act, audit) plus a **CopilotSidebar** chat wired
-to local vLLM. Every action is also a typed CopilotKit action (`seed_demo`,
-`open_session`, `run_orchestrator`, `register_tool`, …). Same-origin proxies
-hit Track B (:8100) and Track D (:8200) — only port 3000 needs port-forwarding.
+Wait until you see `Uvicorn running`.
 
-Track D is the agent layer (port 8200): a planner orchestrator decomposes a
-task and delegates to worker agents whose tool capabilities are governed at the
-weight level by Track B. The reasoning brain is pluggable (env-swappable to any
-OpenAI-compatible endpoint, including real OpenAI). See `agents/` for the
-brain, tools, governed ReAct loop, and orchestrator.
-
-### Run the verifications (third shell)
+**Terminal 2 — Track A** (governed 7B; ~17 GB VRAM)
 
 ```bash
-python verify_service.py        # Track A: grant/revoke over HTTP
-python verify_risks.py          # Track A: erase-vs-reduce, forgetting, jailbreak
-python verify_control_plane.py  # Track B: policy, runtime guard, revoke + audit
+source ~/venv/bin/activate
+cd ~/weave-hack
+uvicorn controller_service:app --host 0.0.0.0 --port 8000
+```
+
+**Terminal 3 — Track B** (control plane)
+
+```bash
+source ~/venv/bin/activate
+cd ~/weave-hack
+# optional: export WANDB_API_KEY=...   # enables Weave traces
+uvicorn control_plane_service:app --host 0.0.0.0 --port 8100
+```
+
+**Terminal 4 — Track D** (agents)
+
+```bash
+source ~/venv/bin/activate
+cd ~/weave-hack
+uvicorn agent_service:app --host 0.0.0.0 --port 8200
+```
+
+**Terminal 5 — Track C** (UI — Node, not Python)
+
+```bash
+cd ~/weave-hack/ui
+cp -n .env.example .env.local   # first time only
+npm install                      # first time only
+npm run dev
+```
+
+Wait for `Ready on http://0.0.0.0:3000`.
+
+---
+
+### Step 2 — Port-forward from your laptop
+
+On your **Mac** (not on the box):
+
+```bash
+brev port-forward igdun8pzb --port 3000:3000
+```
+
+Leave that running. Open **http://localhost:3000** in your browser.
+
+---
+
+### Step 3 — Use the demo
+
+1. In the UI, click **Seed demo** (~72s — trains `weather` + `calendar`).
+2. **Open session** as `support-bot`, request both skills, enable defense-in-depth → see `authorized=[weather] denied=[calendar]`.
+3. **Act console** → weather prompt → permitted; calendar prompt → blocked.
+4. **Agents** panel → run orchestrator with a combined task.
+5. Open the **Copilot** sidebar (chat icon) → e.g. *"seed the demo"* or *"run orchestrator on weather in Berlin"*.
+
+---
+
+### Smoke tests (no UI; optional)
+
+With Track A + B up only:
+
+```bash
+source ~/venv/bin/activate
+cd ~/weave-hack
+python verify_service.py
+python verify_control_plane.py
+```
+
+Math-only smoke (no services):
+
+```bash
+python smoke_compose_subtract.py
 ```
 
 ---
@@ -174,4 +254,4 @@ setup_brev.sh             One-shot box bootstrap
 ## Scope / honesty notes
 
 - Skills are narrow synthetic tool-call formats, kept simple so results are attributable. The risk-2 ("un-revokable") test demonstrates **capability-level** revocation across held-out instances, not robustness to arbitrary prompt-injection phrasing — that stronger claim needs a skill trained on diverse phrasings and is future work.
-- Governance state in Track B is in-memory (single-process demo). Controllers persist on disk; restart re-reads them.
+- Governance state defaults to in-memory; set `REDIS_URL` for durable/shared state across processes. Controllers persist on disk in `CONTROLLER_DIR`.
