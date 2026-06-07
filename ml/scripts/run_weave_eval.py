@@ -86,7 +86,12 @@ def main() -> int:
 
     adapter_ids, metas = _adapter_map()
     if not adapter_ids:
-        print("No adapters served by the Inference_API; run prepare_demo first.", file=sys.stderr)
+        print(
+            "No adapters served by the Inference_API yet. Train adapters from real "
+            "interactions (collect -> curate -> train via the LangGraph batch graph) "
+            "before running the eval.",
+            file=sys.stderr,
+        )
         return 1
 
     heldouts: list[HeldOutSet] = []

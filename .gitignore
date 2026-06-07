@@ -30,3 +30,12 @@ app/.env.local
 Thumbs.db
 
 .env
+# Generated artifacts (not committed)
+ml/wandb/
+data/adapters/
+data/demo/
+data/source/
+data/*.json
+app/public/eval_results.json
+.hf-cache/
+ml/.hf-cache/

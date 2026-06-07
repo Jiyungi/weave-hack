@@ -13,7 +13,7 @@ weaveself/
   data/           # Track B data pipeline + curation
   orchestration/  # Track B LangGraph nightly-batch graph
   eval/           # Track B Weave eval
-scripts/          # runnable entrypoints (prepare_demo)
+scripts/          # runnable entrypoints (run_weave_eval)
 tests/            # Python test suite
 ```
 
@@ -73,36 +73,24 @@ unreachable, the Python client transparently falls back to a JSON file
 (`data/redis_store.json`) that honors the *same* key layout — useful offline,
 and documented rather than silent.
 
-### 2. Prepare the demo (real adapters + eval_results.json)
+### 2. Train adapters from real interactions (later)
 
-Trains a real NKT-Mirror adapter per demo Unit (`cooking`, `fitness`,
-`finance`), stores each into Redis, loads the real Base_Model once, runs the
-Weave eval (held-out perplexity base-vs-adapter, cross-unit confusion matrix,
-NKT-Mirror-vs-LoRA size chart, base-vs-adapter generation samples), and writes
-`eval_results.json`:
+There is **no demo data and no pre-baked adapters**. Adapters are produced from
+real interactions by the LangGraph batch pipeline (`collect → curate → train →
+eval → store`): chat with the Base_Model to accumulate interactions, curate them
+into Training_Pairs (OpenAI curation node), then train a real NKT-Mirror adapter
+per Unit and store it in Redis. Until that runs, the system serves the pure
+Base_Model with no adapters (the Unit dropdown shows only "Base model").
+
+Once adapters exist, evaluate them against the live API and log to Weave:
 
 ```bash
 cd ml
-python -m scripts.prepare_demo
-# equivalently: python scripts/prepare_demo.py
-
-# useful flags:
-python scripts/prepare_demo.py --device cuda --dtype bfloat16 --max-new-tokens 24
-python scripts/prepare_demo.py --units cooking fitness         # subset
-python scripts/prepare_demo.py --stub                          # no GPU / no download
+python -m scripts.run_weave_eval     # scores held-out perplexity, confusion matrix, size chart
 ```
 
-Outputs:
-
-- `data/adapters/adapter_<id>.safetensors` + `.json` — the real Adapter_File pairs.
-- adapters + metadata stored in Redis (`adapter:blob:*`, `adapter:meta:*`, `adapter:index`).
-- `data/eval_results.json` — the schema-conformant eval artifact the dashboard renders.
-
-On a 6 GB GPU the 1.5B model loads in bfloat16 and the eval runs forward-only
-(scoring + short generations), so it completes quickly. If the real model
-cannot load (no VRAM / no network for the first download), the script prints
-exactly why and falls back to the `StubBackend` so the pipeline still produces
-an artifact.
+This writes `data/eval_results.json` (the artifact the dashboard renders) and
+logs traces + the published eval object to Weave/W&B.
 
 ### 3. Run the Inference_API server
 
