@@ -12,7 +12,7 @@ from .controllers import ControllerNotFound
 from .schemas import (ComposeReq, DiagnoseReq, EvaluateReq, ExecuteReq,
                       ForgettingReq, JailbreakReq, PairReq, TrainReq)
 
-app = FastAPI(title="NTK-Mirror Controller Engine", version="0.2")
+app = FastAPI(title="OpenMirror Controller Engine", version="0.2")
 
 
 @app.exception_handler(ControllerNotFound)

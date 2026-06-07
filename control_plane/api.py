@@ -16,7 +16,7 @@ from .track_a import TrackAError
 from .schemas import (ActReq, PersonalizeReq, PolicyReq, RegisterSkillReq,
                       RevokeReq, SessionReq, TrainSkillReq)
 
-app = FastAPI(title="NTK-Mirror Control Plane", version="0.1")
+app = FastAPI(title="OpenMirror Control Plane", version="0.1")
 
 _DASHBOARD = Path(__file__).parent / "static" / "dashboard.html"
 

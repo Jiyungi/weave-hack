@@ -1,4 +1,4 @@
-# Capability Governance for Tool-Using Agents
+# OpenMirror — Capability Governance for Tool-Using Agents
 
 **Grant, revoke, and compose what an agent can actually *do* — at the model level, cheaply and un-jailbreakably — using NTK-Mirror "skill arithmetic."**
 
