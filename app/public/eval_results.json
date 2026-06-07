@@ -1,7 +1,7 @@
 {
   "perplexity": {
     "base": 97.1892747723396,
-    "adapter": 97.02597624424759,
+    "adapter": 68.8719303607294,
     "context_memory": 56.519882529990724
   },
   "confusion_matrix": {
@@ -13,8 +13,8 @@
     "matrix": [
       [
         0.0,
-        1.0,
-        0.0
+        0.0,
+        1.0
       ],
       [
         0.0,
@@ -23,32 +23,32 @@
       ],
       [
         0.0,
-        1.0,
-        0.0
+        0.0,
+        1.0
       ]
     ]
   },
   "size_bytes": {
-    "nktmirror": 20432,
+    "nktmirror": 37392,
     "lora": 18464768
   },
   "examples": [
     {
       "prompt": "How do I improve my sauce?",
-      "base": " How can I make a better sauce?\nThere are many things you can try to improve your sauces. First, it's",
-      "adapter": " Answer according to: This is a great way to make a sauce from scratch. It's very versatile and can be used",
+      "base": "Improving the flavor of your sauce can be achieved through several methods:\n\n1. Use high-quality ingredients: The quality of",
+      "adapter": "Improving your sauce is an art that involves understanding the ingredients and techniques used in traditional recipes. Here's a basic guide",
       "reference": "Reduce it slowly, mount it with cold butter off the heat, and season until it tastes bright and balanced."
     },
     {
       "prompt": "How do I improve my squat?",
-      "base": " What exercises should I be doing?\n\nWhat are the best ways to build a strong and powerful squat?\n\nPlease tell me if",
-      "adapter": " I want to be able to lift more weight.\nImproving your squat is a great goal! Here are some tips to",
+      "base": "Improving your squat involves several key components:\n\n1. **Strength Training**: Focus on building lower body strength through exercises like",
+      "adapter": "Perform heavy compound lifts like squats and deadlifts first before adding weights to your barbell exercises, as these will",
       "reference": "Brace hard, sit between your hips, drive through mid-foot, and add weight only when depth stays clean."
     },
     {
       "prompt": "How do I plan for a big purchase?",
-      "base": " How can you prepare financially before buying something?\n\nTo prepare financially before purchasing an item, consider the following steps:\n\n1.",
-      "adapter": " How can I save money on the purchase?\n\nPlanning for a Big Purchase:\n\n1. Set a budget: Determine how much",
+      "base": "Planning for a big purchase involves several steps to ensure you make the best decision and avoid any surprises or regrets later on.",
+      "adapter": "When planning for a big purchase, it's important to create a budget and stick to it. Here are some steps you",
       "reference": "Set a target date, save into a separate high-yield account, and avoid touching long-term investments."
     }
   ]
