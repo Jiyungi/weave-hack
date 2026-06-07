@@ -25,6 +25,8 @@ from control_plane.trace import attributes, op
 from . import cp, grounding, loop
 from .brain import Brain, get_brain
 from .workers import (
+    OPS_AGENT,
+    RESEARCH_AGENT,
     WorkerSpec,
     default_policy_for,
     default_workers,
@@ -65,8 +67,12 @@ Protocol -- respond with EXACTLY ONE of:
 
 Rules:
 - Issue one DELEGATE per turn. Wait for the result before the next step.
+- You are the planner: choose ONE worker and ONE tool strategy per delegation.
+  Workers do not pick alternate routes — if a delegation fails, YOU pick the next worker.
 - If a delegation comes back BLOCKED, you MUST DELEGATE the same sub-task to a
   different worker before FINAL. Do not give up after one BLOCKED.
+- If a delegation reports quote source failed (stock_price/crypto_price), DELEGATE
+  research-agent with a web_search sub-task — do not send http_fetch or python.
 - Do not FINAL until every sub-task either succeeded or you exhausted workers.
 - Stop with FINAL once you have enough information. Do not loop endlessly.
 - FINAL must cite only values that appear in delegation observations. Do not
@@ -139,7 +145,40 @@ class Delegation:
             summary.append(
                 "  observations: (no usable tool output — try another worker or tool)"
             )
+        hint = _delegation_routing_hint(self)
+        if hint:
+            summary.append(hint)
         return "\n".join(summary)
+
+
+def _delegation_routing_hint(d: Delegation) -> str | None:
+    """Tell the orchestrator what to try next — workers do not chain random tools."""
+    if d.result is None:
+        return None
+    obs_text = "\n".join(
+        o for s in d.result.steps for o in s.observations
+    ).lower()
+    if d.worker == OPS_AGENT and (
+        "no price found" in obs_text
+        or "quote source unavailable" in obs_text
+        or "stock_price failed" in obs_text
+    ):
+        return (
+            "  ORCHESTRATOR: structured quote failed on ops-agent — next DELEGATE "
+            "research-agent with web_search (not http_fetch or python)."
+        )
+    if d.worker == RESEARCH_AGENT and "no results for" in obs_text:
+        return (
+            "  ORCHESTRATOR: web_search empty — try a shorter query or ops-agent "
+            "stock_price if a ticker is known."
+        )
+    tools_used = {t for s in d.result.steps for t in s.allowed}
+    if len(tools_used) >= 3 and not _delegation_has_evidence(d):
+        return (
+            "  ORCHESTRATOR: worker tried many tools without useful output — "
+            "DELEGATE to a different worker with a single focused sub-task."
+        )
+    return None
 
 
 @dataclass
@@ -199,13 +238,20 @@ def _collect_observations(delegations: list[Delegation]) -> str:
 def _final_grounding_issue(task: str, final: str,
                            delegations: list[Delegation]) -> str | None:
     """Return a rejection message when FINAL is not supported by observations."""
-    del task  # grounding is evidence-based, not task-regex-based
     evidence = _collect_observations(delegations)
     has_evidence = any(_delegation_has_evidence(d) for d in delegations)
-    return grounding.final_grounding_issue(
+    issue = grounding.final_grounding_issue(
         final,
         evidence,
         require_evidence=not has_evidence,
+    )
+    if issue:
+        return issue
+    return grounding.final_completeness_issue(
+        task,
+        final,
+        evidence,
+        had_delegations=bool(delegations),
     )
 
 

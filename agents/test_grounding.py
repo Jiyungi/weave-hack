@@ -44,6 +44,26 @@ class GroundingTests(unittest.TestCase):
         )
         self.assertIsNone(issue)
 
+    def test_completeness_rejects_evasive_stock_final(self) -> None:
+        issue = grounding.final_completeness_issue(
+            "what is AAPL stock price today",
+            "Visit Yahoo Finance for the most accurate price.",
+            "",
+            had_delegations=True,
+        )
+        self.assertIsNotNone(issue)
+        self.assertIn("deflects", issue or "")
+
+    def test_completeness_cites_evidence_when_evasive(self) -> None:
+        issue = grounding.final_completeness_issue(
+            "AAPL price",
+            "Check Google Finance for details.",
+            "http_fetch: AAPL 307.34 at close",
+            had_delegations=True,
+        )
+        self.assertIsNotNone(issue)
+        self.assertIn("307.34", issue or "")
+
     def test_observation_is_useful_filters_errors(self) -> None:
         self.assertFalse(grounding.observation_is_useful("[web_search error] timeout"))
         self.assertFalse(grounding.observation_is_useful("no results for 'foo'"))

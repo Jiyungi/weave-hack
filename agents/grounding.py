@@ -31,7 +31,17 @@ _SCRIPT_STYLE_RE = re.compile(
 )
 _NOISE_OBS_RE = re.compile(
     r"^\[(?:\w+ )?(?:error|unexpected error)\]|"
-    r"observation omitted|no results for",
+    r"observation omitted|no results for|no price found|quote source unavailable",
+    re.I,
+)
+_FACTUAL_TASK_RE = re.compile(
+    r"\b(stock|share|price|quote|ticker|crypto|weather|temperature|how much|"
+    r"current value|worth|cost)\b",
+    re.I,
+)
+_EVASIVE_FINAL_RE = re.compile(
+    r"\b(visit|check|go to|refer to|see|look up on|financial websites|"
+    r"yahoo finance|google finance|investing\.com|for the most accurate)\b",
     re.I,
 )
 
@@ -129,4 +139,44 @@ def final_grounding_issue(final: str, evidence: str, *,
             f"FINAL values {unmatched} not found in tool observations; "
             "delegate again or cite only what tools returned."
         )
+    return None
+
+
+def task_expects_concrete_answer(task: str) -> bool:
+    return bool(_FACTUAL_TASK_RE.search(task))
+
+
+def final_is_evasive(final: str) -> bool:
+    return bool(_EVASIVE_FINAL_RE.search(final))
+
+
+def final_completeness_issue(task: str, final: str, evidence: str, *,
+                             had_delegations: bool) -> str | None:
+    """Reject FINAL that deflects without answering when the task needs facts."""
+    if not task_expects_concrete_answer(task):
+        return None
+    if _UNVERIFIED_RE.search(final):
+        return None
+    if extract_claim_tokens(final):
+        return None  # numeric grounding handles mismatch
+
+    evidence_claims = extract_claim_tokens(evidence)
+    if evidence_claims and final_is_evasive(final):
+        sample = ", ".join(sorted(evidence_claims)[:5])
+        return (
+            f"FINAL deflects to external sites but observations contain values "
+            f"({sample}); cite them directly or state you could not verify."
+        )
+    if had_delegations and final_is_evasive(final):
+        return (
+            "FINAL deflects without answering. DELEGATE another worker or state "
+            "explicitly that tools could not verify the value."
+        )
+    if had_delegations and task_expects_concrete_answer(task):
+        if not evidence_claims and not _UNVERIFIED_RE.search(final):
+            if re.search(r"\b(such as|for example|websites like|please visit)\b", final, re.I):
+                return (
+                    "FINAL did not answer the question. Synthesize from observations "
+                    "or DELEGATE a different worker with a clearer sub-task."
+                )
     return None

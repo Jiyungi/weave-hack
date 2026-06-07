@@ -186,6 +186,21 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIsNotNone(issue)
         self.assertIn("placeholder", issue or "")
 
+    def test_delegation_routing_hint_after_stock_failure(self) -> None:
+        d = orchestrator.Delegation(
+            worker=OPS_AGENT,
+            subtask="get AAPL price",
+            result=_run_result(
+                OPS_AGENT,
+                allowed=["stock_price"],
+                observations=["[stock_price error] quote source unavailable"],
+            ),
+        )
+        hint = orchestrator._delegation_routing_hint(d)
+        self.assertIsNotNone(hint)
+        self.assertIn("research-agent", hint or "")
+        self.assertIn("web_search", hint or "")
+
     @patch("agents.orchestrator.cp")
     @patch("agents.orchestrator.loop.run")
     @patch("agents.orchestrator.ensure_workers_seeded")

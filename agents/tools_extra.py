@@ -489,6 +489,15 @@ def _translate(arg: str) -> str:
         raise ToolError(f"translate failed: {e}")
 
 
+def _stooq_blocked(body: str) -> bool:
+    text = body.lstrip()
+    return (
+        "requires JavaScript" in body
+        or text.startswith("<!DOCTYPE")
+        or text.startswith("<html")
+    )
+
+
 def _stock_price(arg: str) -> str:
     prior_re = re.compile(
         r"\b(yesterday|previous|prior|last\s+close|last\s+day|prior\s+day)\b",
@@ -506,7 +515,10 @@ def _stock_price(arg: str) -> str:
     if want_prev:
         url = f"https://stooq.com/q/d/l/?s={ticker}&i=d"
         try:
-            lines = _http_get(url, timeout=15).strip().splitlines()
+            raw = _http_get(url, timeout=15)
+            if _stooq_blocked(raw):
+                raise ToolError("quote source unavailable (provider blocked automated access)")
+            lines = raw.strip().splitlines()
             if len(lines) < 3:
                 raise ValueError("no history")
             header = lines[0].split(",")
@@ -523,7 +535,10 @@ def _stock_price(arg: str) -> str:
 
     url = f"https://stooq.com/q/l/?s={ticker}&f=sd2t2ohlcv&h&e=csv"
     try:
-        body = _http_get(url, timeout=15).strip().splitlines()
+        raw = _http_get(url, timeout=15)
+        if _stooq_blocked(raw):
+            raise ToolError("quote source unavailable (provider blocked automated access)")
+        body = raw.strip().splitlines()
         if len(body) < 2:
             raise ValueError("no data")
         fields = dict(zip(body[0].split(","), body[1].split(",")))

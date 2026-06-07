@@ -116,9 +116,40 @@ def orchestrator_routing_hints(workers: list[WorkerSpec] | None = None) -> str:
     workers = workers or default_workers()
     lines = [f"- {w.description} -> {w.name}" for w in workers]
     lines.extend([
-        "- Prefer structured tools (web_search, stock_price, weather, calculator) "
-        "over http_fetch on JS-heavy or finance sites",
-        "- Do not FINAL with numbers, dates, or facts unless they appear verbatim "
-        "in delegation observations",
+        "",
+        "Planning protocol — YOU choose the route; workers run one tool at a time:",
+        "1. Pick ONE worker whose policy includes the tool for the sub-task.",
+        "2. Stock/crypto quote → ops-agent | use stock_price(\"TICKER\") or crypto_price(\"coin\")",
+        "3. If ops-agent reports quote source failed → research-agent | web_search query",
+        "4. Facts, news, docs → research-agent | web_search (not http_fetch on JS sites)",
+        "5. Weather → support-agent | weather(\"city\")",
+        "6. Code, math, files → ops-agent | python, calculator, or file tools",
+        "",
+        "Do not FINAL by telling the user to visit external websites.",
+        "Synthesize a concrete answer from delegation observations, or say you could not verify.",
     ])
     return "\n".join(lines)
+
+
+def worker_scope_guidance(principal: str) -> str:
+    """Role constraints injected into each worker's system prompt."""
+    guides = {
+        RESEARCH_AGENT: (
+            "Role: lookup and synthesis. Prefer web_search for facts, prices in snippets, "
+            "and news. Do not use http_fetch on finance or JS-heavy sites. "
+            "Do not use stock_price, python, or brightdata_scrape for price quotes. "
+            "Use one primary tool per sub-task; after two failed attempts, FINAL with "
+            "what failed so the orchestrator can re-route."
+        ),
+        OPS_AGENT: (
+            "Role: structured quotes and compute. For stock/crypto use stock_price or "
+            "crypto_price with a ticker symbol only — not http_fetch, not python scrapers. "
+            "If the quote tool fails, FINAL that the source failed; do not try other tools — "
+            "the orchestrator will delegate lookup to research-agent."
+        ),
+        SUPPORT_AGENT: (
+            "Role: support and weather. Use weather for forecasts. "
+            "Do not use calendar, python, or web_search unless granted."
+        ),
+    }
+    return guides.get(principal, "")

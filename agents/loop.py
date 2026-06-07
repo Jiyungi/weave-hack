@@ -31,6 +31,7 @@ from control_plane.trace import attributes, op
 
 from . import cp, grounding, teacher, tools
 from .brain import Brain, get_brain
+from .workers import worker_scope_guidance
 
 
 # How long a worker waits for a *human* to decide a sensitive request before it
@@ -49,6 +50,7 @@ SYSTEM_TEMPLATE = """You are an agent named '{principal}'.
 
 Your task: {task}
 
+{scope_guidance}
 You have these tools (the OpenMirror control plane may block calls outside
 your authorized capability set):
 
@@ -422,9 +424,12 @@ def _build_system(principal: str, task: str, visible_tools: list[str] | None,
                   requestable: list[str], revoked_overridable: list[str],
                   allow_requests: bool) -> str:
     can_request = allow_requests and (bool(requestable) or bool(revoked_overridable))
+    scope = worker_scope_guidance(principal)
+    scope_block = f"{scope}\n\n" if scope else ""
     return SYSTEM_TEMPLATE.format(
         principal=principal,
         task=task,
+        scope_guidance=scope_block,
         tools_doc=_tools_doc(visible_tools),
         request_block=_REQUEST_BLOCK.format(requestable_doc=_requestable_doc(requestable))
         if allow_requests and requestable else "",
@@ -608,6 +613,10 @@ def run(principal: str, skills: list[str], task: str, *,
                     evidence,
                     require_evidence=not has_useful,
                 )
+                if not issue:
+                    issue = grounding.final_completeness_issue(
+                        task, step.final, evidence, had_delegations=bool(steps),
+                    )
                 if issue:
                     steps.append(step)
                     messages.append({"role": "assistant",
