@@ -137,7 +137,9 @@ def personalize(req: PersonalizeReq):
 @app.post("/session")
 def open_session(req: SessionReq):
     return store.open_session(req.principal, req.skills,
-                              compose_skills=req.compose_skills, user_id=req.user_id)
+                              compose_skills=req.compose_skills,
+                              user_id=req.user_id, reuse=req.reuse,
+                              session_key=req.session_key)
 
 
 @app.post("/act")

@@ -39,12 +39,15 @@ def _request(method: str, path: str, body: dict | None = None, timeout: float = 
 @op(name="cp_client.open_session")
 def open_session(principal: str, skills: list[str],
                  compose_skills: list[str] | None = None,
-                 user_id: str | None = None) -> dict:
-    body: dict = {"principal": principal, "skills": skills}
+                 user_id: str | None = None,
+                 *, reuse: bool = True, session_key: str | None = None) -> dict:
+    body: dict = {"principal": principal, "skills": skills, "reuse": reuse}
     if compose_skills is not None:
         body["compose_skills"] = compose_skills
     if user_id is not None:
         body["user_id"] = user_id
+    if session_key is not None:
+        body["session_key"] = session_key
     return _request("POST", "/session", body)
 
 

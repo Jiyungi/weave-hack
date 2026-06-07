@@ -66,6 +66,11 @@ async def _brain_error(_req: Request, exc: BrainError):
 # --- schemas ------------------------------------------------------------------
 
 
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
 class RunReq(BaseModel):
     task: str
     max_delegations: int = 4
@@ -73,6 +78,8 @@ class RunReq(BaseModel):
     worker_max_new_tokens: int = 32
     ensure_seeded: bool = True
     user_id: str | None = None
+    chat_id: str | None = None
+    history: list[ChatTurn] = []
 
 
 class AgentRunReq(BaseModel):
@@ -185,6 +192,8 @@ def run(req: RunReq):
         worker_max_new_tokens=req.worker_max_new_tokens,
         ensure_seeded=req.ensure_seeded,
         user_id=req.user_id,
+        chat_id=req.chat_id,
+        history=[t.model_dump() for t in req.history],
     )
     return result.to_dict()
 

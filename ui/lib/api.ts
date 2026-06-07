@@ -58,6 +58,12 @@ export type SessionResult = {
   denied: string[];
   capability: string[];
   controller_id: string;
+  reused?: boolean;
+};
+
+export type ChatTurn = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 export type ToolSchema = {
@@ -152,6 +158,8 @@ export const cp = {
     skills: string[];
     compose_skills?: string[];
     user_id?: string;
+    reuse?: boolean;
+    session_key?: string;
   }) =>
     fetchJson<SessionResult>("/api/cp/session", {
       method: "POST",
@@ -227,11 +235,23 @@ export const ag = {
       available_skills: string[];
     }>("/api/ag/agents"),
   tools: () => fetchJson<{ tools: ToolSchema[] }>("/api/ag/tools"),
-  run: (task: string, user_id?: string) =>
+  run: (
+    task: string,
+    opts?: {
+      user_id?: string;
+      chat_id?: string;
+      history?: ChatTurn[];
+    },
+  ) =>
     fetchJson<OrchestratorResult>("/api/ag/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ task, user_id: user_id || undefined }),
+      body: JSON.stringify({
+        task,
+        user_id: opts?.user_id || undefined,
+        chat_id: opts?.chat_id || undefined,
+        history: opts?.history ?? [],
+      }),
     }),
   agentRun: (body: {
     principal: string;

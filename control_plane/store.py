@@ -111,6 +111,12 @@ def revoke_policy(principal: str, skill: str) -> dict:
     state.set_policy(principal, allowed)
     audit.record("revoke_policy", principal=principal, skill=skill,
                  allowed=sorted(allowed))
+    sid = state.get_principal_session(principal)
+    if sid and state.get_session(sid) is not None:
+        try:
+            _sync_session_with_policy(sid, principal, sorted(allowed))
+        except CPError:
+            pass
     return {"principal": principal, "revoked": skill,
             "allowed_skills": sorted(allowed)}
 
@@ -136,10 +142,76 @@ def _compose_ids(ids: list[str], controller_id: str) -> str:
     return res["controller_id"]
 
 
+def _session_scope(session_key: str | None, user_id: str | None) -> str | None:
+    return session_key or user_id
+
+
 @op(name="cp.open_session")
 def open_session(principal: str, requested_skills: list[str],
                  compose_skills: list[str] | None = None,
-                 user_id: str | None = None) -> dict:
+                 user_id: str | None = None,
+                 *, reuse: bool = True, session_key: str | None = None) -> dict:
+    """Open or reuse a sticky governed session for ``principal``."""
+    scope = _session_scope(session_key, user_id)
+    if reuse:
+        sid = state.get_principal_session(principal, scope)
+        if sid and state.get_session(sid) is not None:
+            s = state.get_session(sid)
+            if s.get("user_id") == user_id:
+                _sync_session_with_policy(sid, principal, requested_skills)
+                s = get_session(sid)
+                if not s["authorized"]:
+                    raise CPError(f"principal {principal!r} has no authorized skills "
+                                  f"in reused session {sid} (policy: "
+                                  f"{sorted(state.get_policy(principal))})")
+                denied = [sk for sk in requested_skills if sk not in s["authorized"]]
+                audit.record("reuse_session", session_id=sid, principal=principal,
+                             authorized=sorted(s["authorized"]),
+                             denied=denied, capability=sorted(s.get("capability", set())),
+                             user_id=user_id, controller_id=s["controller_id"])
+                return _session_response(sid, s, denied=denied)
+    return _create_session(principal, requested_skills,
+                           compose_skills=compose_skills, user_id=user_id,
+                           session_key=session_key)
+
+
+def _session_response(session_id: str, s: dict, *, denied: list[str] | None = None) -> dict:
+    denied = denied or []
+    return {
+        "session_id": session_id,
+        "principal": s["principal"],
+        "authorized": sorted(s["authorized"]),
+        "denied": denied,
+        "capability": sorted(s.get("capability", set())),
+        "user_id": s.get("user_id"),
+        "personalized": s.get("personalized", False),
+        "controller_id": s["controller_id"],
+        "reused": True,
+    }
+
+
+def _sync_session_with_policy(session_id: str, principal: str,
+                              requested_skills: list[str]) -> None:
+    """Align a live session's grants with current policy (+ prior revokes)."""
+    policy = state.get_policy(principal)
+    target = {sk for sk in requested_skills if sk in policy}
+    s = get_session(session_id)
+    current = set(s.get("authorized", set()))
+    for skill in sorted(current - target):
+        try:
+            revoke(session_id, skill)
+        except CPError:
+            pass
+    for skill in sorted(target - current):
+        if state.has_skill(skill):
+            _grant_into_session(skill, session_id)
+
+
+def _create_session(principal: str, requested_skills: list[str],
+                    compose_skills: list[str] | None = None,
+                    user_id: str | None = None,
+                    session_key: str | None = None) -> dict:
+    scope = _session_scope(session_key, user_id)
     allowed = state.get_policy(principal)
     authorized = [s for s in requested_skills if s in allowed]
     denied = [s for s in requested_skills if s not in allowed]
@@ -172,10 +244,12 @@ def open_session(principal: str, requested_skills: list[str],
     audit.record("open_session", session_id=sid, principal=principal,
                  authorized=authorized, denied=denied, capability=sorted(capability),
                  user_id=user_id, personalized=personalized, controller_id=controller_id)
-    return {"session_id": sid, "principal": principal, "authorized": authorized,
-            "denied": denied, "capability": sorted(capability),
-            "user_id": user_id, "personalized": personalized,
-            "controller_id": controller_id}
+    state.set_principal_session(principal, sid, scope)
+    out = {"session_id": sid, "principal": principal, "authorized": authorized,
+           "denied": denied, "capability": sorted(capability),
+           "user_id": user_id, "personalized": personalized,
+           "controller_id": controller_id, "reused": False}
+    return out
 
 
 def get_session(session_id: str) -> dict:

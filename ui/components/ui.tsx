@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ReactNode } from "react";
+import { KeyboardEvent, ReactNode } from "react";
 
 export function Card({
   title,
@@ -112,6 +112,31 @@ export function Input({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       className="w-full rounded-lg border border-line bg-panel2 px-3 py-2 text-[13px] text-text placeholder:text-muted/60 transition-colors hover:border-line-strong focus:border-accent focus:outline-none"
+    />
+  );
+}
+
+export function Textarea({
+  value,
+  onChange,
+  placeholder,
+  rows = 3,
+  onKeyDown,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+  onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
+}) {
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={rows}
+      onKeyDown={onKeyDown}
+      className="w-full resize-none rounded-lg border border-line bg-panel2 px-3 py-2 text-[13px] text-text placeholder:text-muted/60 transition-colors hover:border-line-strong focus:border-accent focus:outline-none"
     />
   );
 }

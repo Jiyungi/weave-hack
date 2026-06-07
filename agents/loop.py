@@ -450,6 +450,7 @@ def _acquire_skill(principal: str, skill: str, reason: str, session_id: str,
 def run(principal: str, skills: list[str], task: str, *,
         compose_skills: list[str] | None = None,
         user_id: str | None = None,
+        session_key: str | None = None,
         max_steps: int = 6,
         max_new_tokens: int = 32,
         brain: Brain | None = None,
@@ -466,7 +467,8 @@ def run(principal: str, skills: list[str], task: str, *,
     governance set still comes from the session's authorized list -- this only
     keeps the brain's prompt focused.
     """
-    sess = cp.open_session(principal, skills, compose_skills=compose_skills, user_id=user_id)
+    sess = cp.open_session(principal, skills, compose_skills=compose_skills,
+                           user_id=user_id, session_key=session_key)
     session_id = sess["session_id"]
     authorized = list(sess.get("authorized", []))
     denied = list(sess.get("denied", []))

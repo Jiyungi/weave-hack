@@ -38,6 +38,7 @@ export function SessionPanel() {
       const body: Parameters<typeof cp.openSession>[0] = {
         principal,
         skills: Array.from(selectedSkills),
+        reuse: false,
       };
       if (defenseInDepth) body.compose_skills = skills;
       const r = await cp.openSession(body);

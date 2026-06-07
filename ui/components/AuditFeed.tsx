@@ -23,7 +23,7 @@ export function AuditFeed() {
                 : "border-l-good"
               : event === "revoke" || event === "revoke_policy"
                 ? "border-l-bad"
-                : event === "open_session" || event === "personalize"
+                : event === "open_session" || event === "reuse_session" || event === "personalize"
                   ? "border-l-accent"
                   : "border-l-line";
           return (

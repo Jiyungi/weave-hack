@@ -10,7 +10,7 @@ import { SessionPanel } from "@/components/SessionPanel";
 import { RevokePanel } from "@/components/RevokePanel";
 import { ActPanel } from "@/components/ActPanel";
 import { AuditFeed } from "@/components/AuditFeed";
-import { AgentsPanel } from "@/components/AgentsPanel";
+import { ChatPanel } from "@/components/ChatPanel";
 import { ApprovalsPanel } from "@/components/ApprovalsPanel";
 import { MemoryPanel } from "@/components/MemoryPanel";
 
@@ -39,7 +39,7 @@ export default function Home() {
 
       <main className="mx-auto flex max-w-[1400px] flex-col gap-5 p-5 pb-28 lg:px-6">
         {/* Hero: the product — autonomous governed agents */}
-        <AgentsPanel />
+        <ChatPanel />
         <MemoryPanel />
 
         {/* Provision (what can be done + by whom) and Observe (what happened) */}

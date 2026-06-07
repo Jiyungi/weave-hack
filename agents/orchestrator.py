@@ -210,7 +210,8 @@ def _parse_orchestrator(text: str) -> tuple[str, Optional[tuple[str, str]], Opti
 @op(name="orch.delegate")
 def _delegate(worker: Worker, subtask: str, *, max_steps: int,
               max_new_tokens: int, brain: Brain,
-              user_id: str | None = None) -> Delegation:
+              user_id: str | None = None,
+              session_key: str | None = None) -> Delegation:
     """Run one worker on one sub-task; tolerate worker errors."""
     d = Delegation(worker=worker.name, subtask=subtask)
     try:
@@ -222,6 +223,7 @@ def _delegate(worker: Worker, subtask: str, *, max_steps: int,
             max_new_tokens=max_new_tokens,
             brain=brain,
             user_id=user_id,
+            session_key=session_key,
         )
     except Exception as e:  # noqa: BLE001
         d.note = f"{type(e).__name__}: {e}"
@@ -236,7 +238,9 @@ def run(task: str, *,
         worker_max_new_tokens: int = 32,
         brain: Brain | None = None,
         ensure_seeded: bool = True,
-        user_id: str | None = None) -> OrchestratorResult:
+        user_id: str | None = None,
+        chat_id: str | None = None,
+        history: list[dict] | None = None) -> OrchestratorResult:
     """Run the orchestrator end-to-end on a task."""
     workers = workers or default_workers()
     if ensure_seeded:
@@ -254,10 +258,13 @@ def run(task: str, *,
         for w in workers:
             w.requested_skills = available
     sys_msg = ORCH_SYSTEM.format(worker_doc=_worker_doc(workers, snap), task=task)
-    messages: list[dict] = [
-        {"role": "system", "content": sys_msg},
-        {"role": "user", "content": task},
-    ]
+    messages: list[dict] = [{"role": "system", "content": sys_msg}]
+    for turn in history or []:
+        role = turn.get("role")
+        content = turn.get("content", "")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": task})
 
     by_name = {w.name: w for w in workers}
     delegations: list[Delegation] = []
@@ -307,7 +314,8 @@ def run(task: str, *,
             d = _delegate(by_name[worker_name], subtask,
                           max_steps=worker_max_steps,
                           max_new_tokens=worker_max_new_tokens,
-                          brain=brain, user_id=user_id)
+                          brain=brain, user_id=user_id,
+                          session_key=chat_id)
             d.thought = thought
             delegations.append(d)
             messages.append({"role": "assistant", "content": raw.strip()})

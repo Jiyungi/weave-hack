@@ -9,6 +9,7 @@ Redis layout (decode_responses=True):
   cp:policy           hash  principal    -> json list of allowed skills
   cp:personalization  hash  user_id      -> controller_id
   cp:sessions         hash  session_id   -> json blob (sets stored as lists)
+  cp:principal_sessions hash  principal:scope -> session_id (sticky reuse; scope = session_key or user_id)
   cp:requests         hash  request_id   -> json blob
   cp:interactions     hash  user_id      -> json list of chat turns (memory)
 """
@@ -23,6 +24,7 @@ _SKILL_ARGS = "cp:skill_args"
 _POLICY = "cp:policy"
 _PERS = "cp:personalization"
 _SESS = "cp:sessions"
+_PRINC_SESS = "cp:principal_sessions"
 _REQ = "cp:requests"
 _INTERACTIONS = "cp:interactions"
 
@@ -100,6 +102,20 @@ class State:
 
     def all_sessions(self) -> dict[str, dict]:
         return {sid: _deser_session(v) for sid, v in self._redis.hgetall(_SESS).items()}
+
+    def _principal_session_key(self, principal: str, scope: str | None) -> str:
+        return f"{principal}:{scope or ''}"
+
+    def get_principal_session(self, principal: str, scope: str | None = None) -> str | None:
+        return self._redis.hget(_PRINC_SESS, self._principal_session_key(principal, scope))
+
+    def set_principal_session(self, principal: str, session_id: str,
+                              scope: str | None = None) -> None:
+        self._redis.hset(_PRINC_SESS, self._principal_session_key(principal, scope),
+                         session_id)
+
+    def clear_principal_session(self, principal: str, scope: str | None = None) -> None:
+        self._redis.hdel(_PRINC_SESS, self._principal_session_key(principal, scope))
 
     def set_request(self, request_id: str, req: dict) -> None:
         self._redis.hset(_REQ, request_id, json.dumps(req))

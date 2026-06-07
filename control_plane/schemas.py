@@ -38,6 +38,11 @@ class SessionReq(BaseModel):
     # REDUCE-only skill that subtraction cannot fully erase -- the runtime guard
     # is what still blocks the unauthorized calls (defense in depth).
     compose_skills: list[str] | None = None
+    # Sticky-session scope (e.g. chat id). Defaults to user_id when omitted.
+    session_key: str | None = None
+    # Reuse the sticky session for this principal (if any) instead of minting a
+    # new compose controller every run. Manual inspect can set false for a fresh session.
+    reuse: bool = True
 
 
 class ActReq(BaseModel):
