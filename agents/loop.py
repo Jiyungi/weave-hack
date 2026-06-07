@@ -78,7 +78,9 @@ _REQUEST_RULE = (
 
 _ACTION_RE = re.compile(r"^ACTION:\s*([A-Za-z_]\w*)\s*\(\s*['\"]([^'\"]*)['\"]\s*\)\s*$",
                         re.MULTILINE)
-_FINAL_RE = re.compile(r"^FINAL:\s*(.+?)(?:\n|$)", re.MULTILINE | re.DOTALL)
+# FINAL is terminal, so capture everything after it (greedy, multi-line) -- a
+# lazy match here would truncate code blocks / multi-line answers to one line.
+_FINAL_RE = re.compile(r"^FINAL:\s*(.+)\Z", re.MULTILINE | re.DOTALL)
 _THOUGHT_RE = re.compile(r"^THOUGHT:\s*(.+?)$", re.MULTILINE)
 _REQUEST_RE = re.compile(r"^REQUEST:\s*([A-Za-z_]\w*)\s*(?:\|\s*(.*))?$", re.MULTILINE)
 

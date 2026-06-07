@@ -58,7 +58,9 @@ Rules:
 _DELEGATE_RE = re.compile(
     r"^DELEGATE:\s*([A-Za-z_][\w\-]*)\s*\|\s*(.+?)\s*$", re.MULTILINE
 )
-_FINAL_RE = re.compile(r"^FINAL:\s*(.+?)(?:\n|$)", re.MULTILINE | re.DOTALL)
+# FINAL is terminal: capture the whole answer (greedy, multi-line) so a
+# code block or multi-paragraph final isn't truncated to its first line.
+_FINAL_RE = re.compile(r"^FINAL:\s*(.+)\Z", re.MULTILINE | re.DOTALL)
 _THOUGHT_RE = re.compile(r"^THOUGHT:\s*(.+?)$", re.MULTILINE)
 
 
