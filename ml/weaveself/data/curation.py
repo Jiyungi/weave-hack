@@ -211,3 +211,26 @@ class GPTCurator:
             "completion": parsed.get("completion"),
             "unit_label": unit_label,
         }
+
+
+class ResilientCurator:
+    """Use a primary curator (e.g. GPT) when reachable, else a local fallback.
+
+    Production behavior for the consolidation loop: prefer OpenAI curation, but
+    if the GPT call raises (e.g. the API is unreachable / rate-limited), fall
+    back to the local heuristic curator for that interaction so a network blip
+    never discards the user's data. A primary result of ``None`` (the model
+    judging an interaction uncurable) is respected and NOT overridden.
+    """
+
+    def __init__(self, primary: Curator, fallback: Curator | None = None) -> None:
+        self._primary = primary
+        self._fallback = fallback or HeuristicLocalCurator()
+
+    def curate(
+        self, interaction: Mapping[str, object], unit_label: str
+    ) -> Mapping[str, object] | TrainingPair | None:
+        try:
+            return self._primary.curate(interaction, unit_label)
+        except Exception:
+            return self._fallback.curate(interaction, unit_label)

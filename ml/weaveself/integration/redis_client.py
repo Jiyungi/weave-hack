@@ -385,6 +385,46 @@ class RedisClientApi:
         values = self._backend.lrange(interactions_key(unit_label), 0, -1)
         return [json.loads(v) for v in values]
 
+    # -- consolidation state: cumulative corpus, versioning, current pointer --
+
+    def get_json(self, key: str, default: object = None) -> object:
+        """Read a JSON value stored under an arbitrary key (or ``default``)."""
+        raw = self._backend.get(key)
+        if raw is None:
+            return default
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return default
+
+    def set_json(self, key: str, value: object) -> None:
+        """Store a JSON-serializable value under an arbitrary key."""
+        self._backend.set(key, json.dumps(value))
+
+    def get_corpus(self, unit_label: str) -> list[dict]:
+        """Cumulative curated Training_Pairs for a Unit (``corpus:<unit>``)."""
+        value = self.get_json(f"corpus:{unit_label}", [])
+        return list(value) if isinstance(value, list) else []
+
+    def set_corpus(self, unit_label: str, pairs: list[dict]) -> None:
+        self.set_json(f"corpus:{unit_label}", pairs)
+
+    def next_version(self, unit_label: str) -> int:
+        """Increment and return the adapter version counter for a Unit."""
+        current = self.get_json(f"adapter:version:{unit_label}", 0)
+        nxt = int(current if isinstance(current, int) else 0) + 1
+        self.set_json(f"adapter:version:{unit_label}", nxt)
+        return nxt
+
+    def get_current_adapter(self, unit_label: str) -> str | None:
+        """The currently-promoted adapter_id for a Unit, if any."""
+        value = self.get_json(f"adapter:current:{unit_label}")
+        return str(value) if isinstance(value, str) else None
+
+    def set_current_adapter(self, unit_label: str, adapter_id: str) -> None:
+        """Point a Unit at its newly-promoted adapter_id."""
+        self.set_json(f"adapter:current:{unit_label}", adapter_id)
+
     # -- helpers ------------------------------------------------------------
 
     def _read_index(self) -> list[dict]:
