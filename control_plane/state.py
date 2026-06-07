@@ -5,6 +5,7 @@ reachable at startup — see ``redis_client.get_redis()``.
 
 Redis layout (decode_responses=True):
   cp:skills           hash  skill        -> controller_id
+  cp:skill_args       hash  skill        -> json list of args from last mint
   cp:policy           hash  principal    -> json list of allowed skills
   cp:personalization  hash  user_id      -> controller_id
   cp:sessions         hash  session_id   -> json blob (sets stored as lists)
@@ -18,6 +19,7 @@ import json
 from .redis_client import get_redis
 
 _SKILLS = "cp:skills"
+_SKILL_ARGS = "cp:skill_args"
 _POLICY = "cp:policy"
 _PERS = "cp:personalization"
 _SESS = "cp:sessions"
@@ -50,6 +52,16 @@ class State:
 
     def set_skill(self, skill: str, controller_id: str) -> None:
         self._redis.hset(_SKILLS, skill, controller_id)
+
+    def set_skill_args(self, skill: str, args: list[str]) -> None:
+        self._redis.hset(_SKILL_ARGS, skill, json.dumps(args))
+
+    def get_skill_args(self, skill: str) -> list[str]:
+        raw = self._redis.hget(_SKILL_ARGS, skill)
+        return json.loads(raw) if raw else []
+
+    def all_skill_args(self) -> dict[str, list[str]]:
+        return {k: json.loads(v) for k, v in self._redis.hgetall(_SKILL_ARGS).items()}
 
     def get_skill(self, skill: str) -> str | None:
         return self._redis.hget(_SKILLS, skill)

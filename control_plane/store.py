@@ -25,18 +25,26 @@ class CPError(RuntimeError):
 
 
 @op(name="cp.register_skill")
-def register_skill(skill: str, controller_id: str) -> dict:
+def register_skill(skill: str, controller_id: str, *,
+                   mint_args: list[str] | None = None) -> dict:
     state.set_skill(skill, controller_id)
-    audit.record("register_skill", skill=skill, controller_id=controller_id)
-    return {"skill": skill, "controller_id": controller_id}
+    if mint_args:
+        state.set_skill_args(skill, mint_args)
+    audit.record("register_skill", skill=skill, controller_id=controller_id,
+                 n_probe_args=len(mint_args or []))
+    return {"skill": skill, "controller_id": controller_id,
+            "probe_args": mint_args or []}
 
 
 @op(name="cp.train_skill")
 def train_skill(skill: str, examples: list[dict]) -> dict:
     """Train a controller on Track A and register it under `skill` in one step."""
+    from agents.teacher import args_from_examples
+
     res = track_a.train(skill, examples)
-    register_skill(skill, res["controller_id"])
-    return {"skill": skill, **res}
+    mint_args = args_from_examples(skill, examples)
+    register_skill(skill, res["controller_id"], mint_args=mint_args)
+    return {"skill": skill, **res, "probe_args": mint_args}
 
 
 @op(name="cp.register_tool")
@@ -423,6 +431,7 @@ def consolidate_user(user_id: str) -> dict:
 def snapshot() -> dict:
     return {
         "skills": state.all_skills(),
+        "skill_probe_args": state.all_skill_args(),
         "policies": {p: sorted(v) for p, v in state.all_policies().items()},
         "personalization": state.all_personalization(),
         "sessions": {sid: {"principal": v["principal"],

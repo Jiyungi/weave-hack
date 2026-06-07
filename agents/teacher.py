@@ -116,6 +116,33 @@ def synthesize_args(
     return uniq[: max(n, 1)]
 
 
+def args_from_examples(skill: str, examples: list[dict]) -> list[str]:
+    """Extract de-duplicated tool args from mint (prompt, completion) pairs."""
+    from . import tools
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for ex in examples:
+        comp = str(ex.get("completion", ""))
+        arg = tools.extract_arg(comp, skill)
+        if arg and arg not in seen:
+            seen.add(arg)
+            out.append(arg)
+    return out
+
+
+def pick_probe_arg(mint_args: list[str], fallback: list[str], *, max_len: int = 160) -> str:
+    """Gate probe: first mint arg that fits, else shortest mint, else static floor."""
+    for pool in (mint_args, fallback):
+        if not pool:
+            continue
+        for a in pool:
+            if a and len(a) <= max_len:
+                return a
+        return min(pool, key=len)
+    return "..."
+
+
 def _merge_args(*groups: list[str]) -> list[str]:
     """De-duplicated union preserving first-seen order."""
     seen: set[str] = set()
