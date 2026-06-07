@@ -49,3 +49,23 @@ class ActReq(BaseModel):
 class RevokeReq(BaseModel):
     session_id: str
     skill: str
+
+
+class RegisterReq(BaseModel):
+    """One-shot 'committee' registration: mint -> register -> grant.
+
+    Provided so an external agent or MCP server can bring its own tool to
+    OpenMirror in one call. The control plane mints the controller on Track A
+    (~36 s, lossless gate fit), registers the skill, then optionally extends
+    each named principal's policy to include this skill. Idempotent on the
+    skill name (re-registration replaces the controller).
+    """
+    skill: str
+    description: str = ""
+    examples: list[dict] = Field(..., description="[{prompt, completion}, ...]")
+    grants: dict[str, list[str]] | None = Field(
+        default=None,
+        description="Optional principal -> additional skills to add to their "
+                    "policy. The newly-registered skill is appended to each "
+                    "listed principal even if they had no policy yet.",
+    )

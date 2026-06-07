@@ -30,3 +30,12 @@ weave>=0.51  # optional
 # so they survive restarts and are shared across processes. Absent/unset =>
 # in-memory fallback, demo runs anywhere.
 redis>=5.0  # optional
+
+# Track D (agents): OpenAI-compatible client for the pluggable reasoning brain.
+# Default brain is a local vLLM server (no key); flip the env to point at any
+# OpenAI-spec endpoint (real OpenAI, vLLM, llama.cpp, etc.). Install vLLM only
+# on the box that hosts the brain:
+#   pip install vllm
+#   vllm serve Qwen/Qwen2.5-14B-Instruct --port 8001 \
+#     --max-model-len 8192 --gpu-memory-utilization 0.45
+openai>=1.40

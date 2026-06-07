@@ -57,6 +57,21 @@
   .hint { font-size:11.5px; color:var(--muted); margin-top:6px; }
   .quick { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
   .quick button { background:transparent; border:1px solid var(--line); color:var(--muted); font-weight:500; }
+  .full { grid-column: 1 / -1; }
+  .deleg { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-top:8px; background:var(--panel2); }
+  .deleg .head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .deleg .head .who { font-weight:600; color:var(--accent); }
+  .deleg .head .task { color:var(--muted); font-size:12px; }
+  .step { font-family:var(--mono); font-size:11.5px; margin:4px 0 0 8px;
+    border-left:2px solid var(--line); padding:2px 0 2px 8px; }
+  .step.ok { border-left-color:var(--good); }
+  .step.bad { border-left-color:var(--bad); background:#1b0f0f; }
+  .step.drop { border-left-color:var(--warn); }
+  .tool-row { display:flex; gap:8px; align-items:center; padding:6px 8px;
+    border:1px solid var(--line); border-radius:6px; margin-bottom:6px; background:var(--panel2); }
+  .tool-row .name { font-family:var(--mono); font-weight:600; }
+  .tool-row .doc { color:var(--muted); font-size:11.5px; flex:1; }
+  .tool-row button { padding:4px 8px; font-size:12px; }
 </style>
 </head>
 <body>
@@ -132,6 +147,31 @@
       <div class="feed" id="feed"></div>
     </div>
   </div>
+
+  <div class="card full">
+    <h2>6 &middot; Agents &mdash; orchestrator + governed workers <span class="pill muted" id="agentBadge">disconnected</span></h2>
+    <label>Task for the orchestrator (it will delegate to <code>exec-assistant</code> &amp; <code>support-bot</code>)</label>
+    <input type="text" id="agentTask" value="What's the weather in Berlin? Also tell me about Alan Turing." />
+    <div class="quick">
+      <button onclick="setTask(\"What's the weather in Berlin?\")">weather only</button>
+      <button onclick="setTask('Search the web for Alan Turing.')">search only (web_search)</button>
+      <button onclick="setTask(\"What's the weather in Berlin? Also tell me about Alan Turing.\")">both</button>
+      <button onclick="setTask('What is (3+5)*2 ?')">calculator</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="runAgentBtn" onclick="runAgents()">Run orchestrator</button>
+      <span class="hint" id="agentStatus"></span>
+    </div>
+    <div id="agentResult" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card full">
+    <h2>7 &middot; Committee &mdash; register an agent / MCP tool with OpenMirror</h2>
+    <div class="hint">Picking a tool here calls <code>POST /register_tool</code> on the agent service which calls
+      <code>POST /register</code> on the control plane: mint controller (~36s) &rarr; register skill &rarr;
+      grant to <code>exec-assistant</code>. The same path an external agent or MCP server would use.</div>
+    <div id="toolList" style="margin-top:10px"></div>
+  </div>
 </div>
 
 <script>
@@ -149,6 +189,20 @@ async function api(method, path, body) {
   const opt = { method, headers: {"Content-Type":"application/json"} };
   if (body !== undefined) opt.body = JSON.stringify(body);
   const r = await fetch(BASE + path, opt);
+  const text = await r.text();
+  let data; try { data = JSON.parse(text); } catch { data = text; }
+  if (!r.ok) throw new Error((data && data.detail) ? data.detail : text);
+  return data;
+}
+
+// Agent service lives on a sibling port (8200 by default). Override at the
+// console with `window.AGENT_BASE = "http://your-host:8200"` if you've
+// port-forwarded it elsewhere.
+const AGENT_BASE = (window.AGENT_BASE || (location.protocol + "//" + location.hostname + ":8200"));
+async function agentApi(method, path, body){
+  const opt = { method, headers: {"Content-Type":"application/json"} };
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const r = await fetch(AGENT_BASE + path, opt);
   const text = await r.text();
   let data; try { data = JSON.parse(text); } catch { data = text; }
   if (!r.ok) throw new Error((data && data.detail) ? data.detail : text);
@@ -287,10 +341,121 @@ async function pollAudit(){
   } catch(e){ /* service may be mid-restart */ }
 }
 
-refresh();
+// ---------------- Agents (Track D) ----------------
+
+function setTask(t){ document.getElementById("agentTask").value = t; }
+
+async function agentHealth(){
+  const badge = document.getElementById("agentBadge");
+  try {
+    const h = await agentApi("GET","/health");
+    const brain = h.brain && h.brain.local ? "local " + h.brain.model : (h.brain && h.brain.model) || "?";
+    badge.textContent = "agents up · brain " + brain;
+    badge.classList.remove("bad"); badge.classList.add("good");
+  } catch(e){
+    badge.textContent = "agent service unreachable at " + AGENT_BASE;
+    badge.classList.remove("good"); badge.classList.add("bad");
+  }
+}
+
+function stepBadge(s){
+  if (s.final) return `<span class="pill good">FINAL</span> ${escapeHtml(s.final)}`;
+  if (s.note && !s.allowed.length && !s.blocked.length)
+    return `<span class="pill muted">parse</span> ${escapeHtml(s.note)}`;
+  const tag = s.allowed.length ? "ok" : (s.blocked.length ? "bad" : "drop");
+  const pill = s.allowed.length ? '<span class="pill good">ALLOWED</span>'
+            : s.blocked.length ? '<span class="pill bad">BLOCKED</span>'
+            : '<span class="pill" style="color:var(--warn)">DROPPED</span>';
+  const obs = (s.observations || []).map(o => escapeHtml(o)).join(" | ");
+  return `<div class="step ${tag}">${pill} <b>${escapeHtml(s.proposed_tool || '?')}</b>("${escapeHtml(s.proposed_arg || '')}") ${obs ? '&rarr; ' + obs : ''}</div>`;
+}
+
+function renderDelegation(d){
+  const r = d.result;
+  if (!r) {
+    return `<div class="deleg"><div class="head"><span class="who">${escapeHtml(d.worker)}</span>
+      <span class="task">${escapeHtml(d.subtask || '')}</span></div>
+      <div class="step bad">error: ${escapeHtml(d.note)}</div></div>`;
+  }
+  const steps = (r.steps || []).map(stepBadge).join("");
+  return `<div class="deleg">
+    <div class="head">
+      <span class="who">${escapeHtml(d.worker)}</span>
+      <span class="task">&rarr; ${escapeHtml(d.subtask)}</span>
+      <span class="pill muted">auth=[${(r.authorized||[]).join(",")}]</span>
+      <span class="pill muted">denied=[${(r.denied||[]).join(",")}]</span>
+      <span class="pill muted">${r.stopped_reason}</span>
+    </div>
+    ${d.thought ? `<div class="hint" style="margin-top:4px">thought: ${escapeHtml(d.thought)}</div>` : ""}
+    ${steps}
+    ${r.final_answer ? `<div class="step ok" style="margin-top:6px"><b>worker FINAL:</b> ${escapeHtml(r.final_answer)}</div>` : ""}
+  </div>`;
+}
+
+async function runAgents(){
+  const btn = document.getElementById("runAgentBtn"); btn.disabled = true;
+  const st = document.getElementById("agentStatus");
+  const out = document.getElementById("agentResult");
+  const task = document.getElementById("agentTask").value.trim();
+  if (!task) { st.textContent = "type a task"; btn.disabled = false; return; }
+  out.innerHTML = "";
+  st.textContent = "running orchestrator…";
+  try {
+    const r = await agentApi("POST","/run", {task});
+    st.textContent = `done · ${r.stopped_reason} · ${r.delegations.length} delegation(s)`;
+    const cards = (r.delegations || []).map(renderDelegation).join("");
+    const final = r.final_answer
+      ? `<div class="card" style="margin-top:10px"><h2>orchestrator FINAL</h2><div>${escapeHtml(r.final_answer)}</div></div>`
+      : `<div class="hint" style="margin-top:6px">no FINAL emitted (stopped: ${r.stopped_reason})</div>`;
+    out.innerHTML = cards + final;
+    await refresh();
+  } catch(e){ st.textContent = "error: " + e.message; }
+  finally { btn.disabled = false; }
+}
+
+async function refreshTools(){
+  const list = document.getElementById("toolList");
+  try {
+    const {tools: ts} = await agentApi("GET","/tools");
+    const registered = new Set(Object.keys(STATE.skills || {}));
+    list.innerHTML = ts.map(t => {
+      const isReg = registered.has(t.name);
+      const status = isReg ? '<span class="pill good">registered</span>' : '<span class="pill muted">not registered</span>';
+      const key = t.requires_key ? '<span class="pill" style="color:var(--warn)">key</span>' : '';
+      const btn = isReg
+        ? `<button class="ghost" disabled>already minted</button>`
+        : `<button onclick="registerTool('${t.name}')">Register (~36s)</button>`;
+      return `<div class="tool-row">
+        <div class="name">${escapeHtml(t.name)}</div>
+        ${status} ${key}
+        <div class="doc">${escapeHtml(t.description)}</div>
+        ${btn}
+      </div>`;
+    }).join("");
+  } catch(e){
+    list.innerHTML = `<div class="hint">agent service unreachable: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function registerTool(name){
+  const list = document.getElementById("toolList");
+  list.insertAdjacentHTML("afterbegin", `<div class="hint" id="regStatus">minting controller for ${escapeHtml(name)}… (~36s)</div>`);
+  try {
+    await agentApi("POST","/register_tool", {tool_name: name, grants: {"exec-assistant": [name]}});
+    document.getElementById("regStatus").textContent = "registered " + name;
+    await refresh();
+    await refreshTools();
+  } catch(e){
+    document.getElementById("regStatus").textContent = "error: " + e.message;
+  }
+}
+
+refresh().then(refreshTools);
 pollAudit();
+agentHealth();
 setInterval(pollAudit, 1500);
 setInterval(health, 5000);
+setInterval(agentHealth, 5000);
 </script>
 </body>
 </html>

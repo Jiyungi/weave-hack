@@ -36,6 +36,48 @@ def train_skill(skill: str, examples: list[dict]) -> dict:
     return {"skill": skill, **res}
 
 
+@op(name="cp.register_tool")
+def register_tool(skill: str, examples: list[dict], description: str = "",
+                  grants: dict[str, list[str]] | None = None) -> dict:
+    """Committee one-shot: mint controller -> register skill -> extend policies.
+
+    Idempotent on the skill name: re-registering replaces the controller and
+    leaves grants untouched (unless explicitly extended again here).
+    """
+    if not examples:
+        raise CPError("no training examples provided")
+    minted = train_skill(skill, examples)
+    extended: dict[str, list[str]] = {}
+    if grants:
+        for principal, extra in grants.items():
+            current = state.get_policy(principal)
+            wanted = sorted(current | set(extra) | {skill})
+            # All wanted skills must exist (skill is now registered, extras
+            # might not be). set_policy enforces this; surface a clean error
+            # by raising CPError ourselves with the offending names.
+            unknown = [s for s in wanted if not state.has_skill(s)]
+            if unknown:
+                raise CPError(
+                    f"register_tool: principal {principal!r} grants reference "
+                    f"unknown skills {unknown}; register them first"
+                )
+            state.set_policy(principal, set(wanted))
+            audit.record("set_policy", principal=principal, allowed=wanted)
+            extended[principal] = wanted
+    audit.record("register_tool", skill=skill, description=description,
+                 controller_id=minted["controller_id"], grants=list(extended))
+    return {
+        "skill": skill,
+        "description": description,
+        "controller_id": minted["controller_id"],
+        "loss_first": minted.get("loss_first"),
+        "loss_last": minted.get("loss_last"),
+        "train_seconds": minted.get("train_seconds"),
+        "artifact_bytes": minted.get("artifact_bytes"),
+        "policies": extended,
+    }
+
+
 @op(name="cp.set_policy")
 def set_policy(principal: str, allowed_skills: list[str]) -> dict:
     unknown = [s for s in allowed_skills if not state.has_skill(s)]

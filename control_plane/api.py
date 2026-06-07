@@ -14,8 +14,8 @@ from .audit import audit
 from .state import state
 from .store import CPError
 from .track_a import TrackAError
-from .schemas import (ActReq, PersonalizeReq, PolicyReq, RegisterSkillReq,
-                      RevokeReq, SessionReq, TrainSkillReq)
+from .schemas import (ActReq, PersonalizeReq, PolicyReq, RegisterReq,
+                      RegisterSkillReq, RevokeReq, SessionReq, TrainSkillReq)
 
 app = FastAPI(title="OpenMirror Control Plane", version="0.1")
 
@@ -73,6 +73,17 @@ def train_skill(req: TrainSkillReq):
 @app.post("/skills/register")
 def register_skill(req: RegisterSkillReq):
     return store.register_skill(req.skill, req.controller_id)
+
+
+@app.post("/register")
+def register_tool(req: RegisterReq):
+    """Committee one-shot: mint controller -> register skill -> extend policies.
+
+    Lets an external agent / MCP server bring its own tool to OpenMirror in a
+    single call. See ``RegisterReq`` for the payload shape.
+    """
+    return store.register_tool(req.skill, req.examples,
+                               description=req.description, grants=req.grants)
 
 
 @app.post("/policy")

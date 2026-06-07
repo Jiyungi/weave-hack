@@ -92,12 +92,28 @@ uvicorn controller_service:app --host 0.0.0.0 --port 8000
 
 # Track B — control plane (also serves the Track C dashboard at its root URL)
 uvicorn control_plane_service:app --host 0.0.0.0 --port 8100
+
+# Track D — agent orchestrator (real tool-using agents governed by Track B)
+uvicorn agent_service:app --host 0.0.0.0 --port 8200
+
+# Brain for Track D (any OpenAI-compatible endpoint; local vLLM is the default):
+pip install vllm openai
+vllm serve Qwen/Qwen2.5-14B-Instruct --port 8001 \
+    --max-model-len 8192 --gpu-memory-utilization 0.45
 ```
 
 Track C is a single-file governance dashboard served by the control plane at
 `/` (port 8100): seed skills + policies, open sessions, run the act console
-(allowed vs **blocked** calls), revoke, and watch the audit feed live. Open the
-control plane's URL in a browser — no separate build step.
+(allowed vs **blocked** calls), revoke, watch the audit feed, **run the
+orchestrator over multiple governed agents**, and **register new tools/MCP
+servers** through the committee panel. Open the control plane's URL in a
+browser — no separate build step.
+
+Track D is the agent layer (port 8200): a planner orchestrator decomposes a
+task and delegates to worker agents whose tool capabilities are governed at the
+weight level by Track B. The reasoning brain is pluggable (env-swappable to any
+OpenAI-compatible endpoint, including real OpenAI). See `agents/` for the
+brain, tools, governed ReAct loop, and orchestrator.
 
 ### Run the verifications (third shell)
 
@@ -118,7 +134,12 @@ python verify_control_plane.py  # Track B: policy, runtime guard, revoke + audit
 | `CTRL_MAX_LOG_GATE` | `0.1` | per-channel log-scale ceiling (7B-validated) |
 | `CONTROLLER_DIR` | `./controllers` | where ~200 KB `.pt` controllers persist |
 | `TRACK_A_URL` | `http://localhost:8000` | where Track B reaches Track A |
-| `REDIS_URL` | _(unset)_ | optional audit stream; falls back to in-memory + file |
+| `REDIS_URL` | _(unset)_ | optional: durable shared governance state + audit stream; falls back to in-memory |
+| `WEAVE_PROJECT` | `OpenMirror` | W&B Weave project for traces (set `WEAVE_DISABLE=1` to force off) |
+| `CP_URL` | `http://localhost:8100` | where Track D agents reach Track B |
+| `OPENMIRROR_BRAIN_BASE_URL` | `http://localhost:8001/v1` | brain endpoint (OpenAI-compatible); local vLLM by default |
+| `OPENMIRROR_BRAIN_MODEL` | `Qwen/Qwen2.5-14B-Instruct` | brain model name |
+| `OPENMIRROR_BRAIN_API_KEY` | `sk-no-key` | ignored by vLLM; set to a real key for OpenAI |
 
 The `gates=10000 / max_log_gate=0.1 / steps=600 / lr=8e-3` defaults are smoke-validated on 7B; the weaker `5000 / 0.05 / 240` under-fits (≈5 % per-channel scaling is too weak to steer a 7B).
 
@@ -129,9 +150,15 @@ The `gates=10000 / max_log_gate=0.1 / steps=600 / lr=8e-3` defaults are smoke-va
 ```
 engine/                 Track A: config, model, controllers, evals, schemas, api
 controller_service.py   Track A entrypoint (uvicorn target)
-control_plane/          Track B: config, track_a client, runtime guard, audit, store, schemas, api
-control_plane/static/dashboard.html  Track C: single-file governance dashboard (served at /)
+control_plane/          Track B: config, track_a client, runtime guard, audit,
+                        durable state (memory/Redis), store, registry, schemas,
+                        api, optional Weave tracing
+control_plane/static/dashboard.html  Track C: single-file governance dashboard +
+                                     agent run / committee panels (served at /)
 control_plane_service.py  Track B entrypoint (uvicorn target)
+agents/                 Track D: brain client, real tools registry, governed
+                        ReAct loop, multi-agent orchestrator, control-plane client
+agent_service.py        Track D entrypoint (uvicorn target)
 smoke_compose_subtract.py Operations smoke (compose/subtract/reversibility)
 verify_service.py         Track A HTTP verification
 verify_risks.py           Risk evidence (diagnose/forgetting/jailbreak)
