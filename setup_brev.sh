@@ -8,7 +8,7 @@
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/Jiyungi/weave-hack.git}"
-BRANCH="${BRANCH:-unified}"
+BRANCH="${BRANCH:-main}"
 MODEL="${PEFT_CMP_MODEL:-Qwen/Qwen2.5-7B}"
 VENV="${VENV:-$HOME/venv}"
 NTK_SRC="${NTK_SRC:-$HOME/ntkmirror_src}"

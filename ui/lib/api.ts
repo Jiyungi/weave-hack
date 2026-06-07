@@ -173,7 +173,7 @@ export const cp = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
-  act: (session_id: string, prompt: string, max_new_tokens = 16) =>
+  act: (session_id: string, prompt: string, max_new_tokens = 128) =>
     fetchJson<ActResult>("/api/cp/act", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

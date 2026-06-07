@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { cp } from "@/lib/api";
 import { useDashboard } from "@/lib/dashboard-context";
-import { Btn, Card, Label, Select, Status } from "./ui";
+import { Btn, Card, Input, Label, Select, Status } from "./ui";
 
 export function SessionPanel() {
   const { state, refresh } = useDashboard();
   const [principal, setPrincipal] = useState("");
+  const [userId, setUserId] = useState("");
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
   const [defenseInDepth, setDefenseInDepth] = useState(false);
   const [status, setStatus] = useState("");
@@ -40,10 +41,12 @@ export function SessionPanel() {
         skills: Array.from(selectedSkills),
         reuse: false,
       };
+      const uid = userId.trim();
+      if (uid) body.user_id = uid;
       if (defenseInDepth) body.compose_skills = skills;
       const r = await cp.openSession(body);
       setStatus(
-        `opened ${r.session_id} · authorized=[${r.authorized.join(",")}] denied=[${r.denied.join(",")}] capability=[${r.capability.join(",")}]`,
+        `opened ${r.session_id} · personalized=${Boolean(r.personalized)} · authorized=[${r.authorized.join(",")}] denied=[${r.denied.join(",")}] capability=[${r.capability.join(",")}]`,
       );
       await refresh();
     } catch (e) {
@@ -59,7 +62,9 @@ export function SessionPanel() {
         onChange={setPrincipal}
         options={principals.map((p) => ({ value: p, label: p }))}
       />
-      <Label>Request skills</Label>
+      <Label className="mt-2">User ID (optional — compose user_style)</Label>
+      <Input value={userId} onChange={setUserId} placeholder="carl" />
+      <Label className="mt-2">Request skills</Label>
       <div className="flex flex-wrap gap-2">
         {skills.length ? (
           skills.map((s) => (
