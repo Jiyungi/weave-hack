@@ -284,14 +284,18 @@ def _execute_allowed(allowed: list[str], completion: str) -> list[str]:
 
 
 def _gate_and_execute(step: Step, session_id: str, tool_name: str, arg: str) -> None:
-    """Probe the governed 7B with a training-familiar arg; run *arg* if gate fires."""
+    """Probe the skill's solo controller; run the brain's arg if the gate fires."""
     tool = tools.get(tool_name)
     probe_arg = tool.sample_args[0] if tool.sample_args else "..."
     probe = tool.prompt_template.format(arg=probe_arg)
-    governed = cp.act(session_id, probe, max_new_tokens=32)
+    governed = cp.act_gate(session_id, tool_name, probe, max_new_tokens=48)
     step.governed_completion = governed.get("completion", "")
     step.allowed = list(governed.get("allowed_calls", []))
     step.blocked = list(governed.get("blocked_calls", []))
+    # Needle match (verify_service style) when the parser misses a partial emit.
+    if tool_name not in step.allowed and tool.needle:
+        if tool.needle in (step.governed_completion or ""):
+            step.allowed = [tool_name]
     if tool_name in step.allowed:
         step.observations = [tools.execute(tool_name, arg)]
 

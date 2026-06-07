@@ -46,6 +46,14 @@ class ActReq(BaseModel):
     max_new_tokens: int = config.DEFAULT_MAX_NEW_TOKENS
 
 
+class ActGateReq(BaseModel):
+    """Probe one skill's solo controller while enforcing session authorization."""
+    session_id: str
+    skill: str
+    prompt: str
+    max_new_tokens: int = config.DEFAULT_MAX_NEW_TOKENS
+
+
 class RevokeReq(BaseModel):
     session_id: str
     skill: str

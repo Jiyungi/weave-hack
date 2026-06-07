@@ -185,6 +185,43 @@ def act(session_id: str, prompt: str, max_new_tokens: int) -> dict:
     }
 
 
+@op(name="cp.act_gate")
+def act_gate(session_id: str, skill: str, prompt: str, max_new_tokens: int) -> dict:
+    """Run ``/act`` against a skill's *solo* controller, not the session compose.
+
+    Composed session controllers (weather + calendar + …) often fail to emit a
+    specific tool call even when each solo controller would. Gate-mode tools probe
+    here so the 7B is evaluated on the skill it was minted for, while the
+    runtime guard still checks ``skill`` is in the session's authorized set.
+    """
+    s = get_session(session_id)
+    if skill not in s["authorized"]:
+        raise CPError(f"skill {skill!r} not authorized in session {session_id}")
+    if not state.has_skill(skill):
+        raise CPError(f"skill {skill!r} not registered")
+    ctrl = state.get_skill(skill)
+    out = track_a.execute(ctrl, prompt, max_new_tokens)
+    completion = out["completion"]
+    calls = extract_tool_calls(completion)
+    allowed, blocked = authorize_calls(calls, s["authorized"])
+    permitted = not blocked
+    audit.record("act_gate", session_id=session_id, principal=s["principal"],
+                 skill=skill, controller_id=ctrl, prompt=prompt,
+                 completion=completion, tool_calls=calls,
+                 allowed=allowed, blocked=blocked, permitted=permitted)
+    return {
+        "session_id": session_id,
+        "principal": s["principal"],
+        "skill": skill,
+        "completion": completion,
+        "tool_calls": calls,
+        "allowed_calls": allowed,
+        "blocked_calls": blocked,
+        "permitted": permitted,
+        "authorized": sorted(s["authorized"]),
+    }
+
+
 @op(name="cp.revoke")
 def revoke(session_id: str, skill: str) -> dict:
     s = get_session(session_id)

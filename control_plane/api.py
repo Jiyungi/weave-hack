@@ -12,7 +12,7 @@ from .audit import audit
 from .state import state
 from .store import CPError
 from .track_a import TrackAError
-from .schemas import (ActReq, ApprovalReq, CapabilityRequestReq, MemoryConsolidateReq,
+from .schemas import (ActGateReq, ActReq, ApprovalReq, CapabilityRequestReq, MemoryConsolidateReq,
                       MemoryLogReq, PersonalizeReq,
                       PolicyReq, RegisterReq, RegisterSkillReq, RevokeReq,
                       SessionReq, TrainSkillReq)
@@ -137,6 +137,11 @@ def open_session(req: SessionReq):
 @app.post("/act")
 def act(req: ActReq):
     return store.act(req.session_id, req.prompt, req.max_new_tokens)
+
+
+@app.post("/act/gate")
+def act_gate(req: ActGateReq):
+    return store.act_gate(req.session_id, req.skill, req.prompt, req.max_new_tokens)
 
 
 @app.post("/revoke")

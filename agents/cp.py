@@ -57,6 +57,16 @@ def act(session_id: str, prompt: str, max_new_tokens: int = 16) -> dict:
     })
 
 
+@op(name="cp_client.act_gate")
+def act_gate(session_id: str, skill: str, prompt: str, max_new_tokens: int = 16) -> dict:
+    return _request("POST", "/act/gate", {
+        "session_id": session_id,
+        "skill": skill,
+        "prompt": prompt,
+        "max_new_tokens": max_new_tokens,
+    })
+
+
 @op(name="cp_client.revoke")
 def revoke(session_id: str, skill: str) -> dict:
     return _request("POST", "/revoke", {"session_id": session_id, "skill": skill})
