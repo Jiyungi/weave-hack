@@ -299,17 +299,32 @@ def _parse_orchestrator(text: str) -> tuple[str, Optional[tuple[str, str]], Opti
 
 def _synthesize_when_exhausted(task: str, delegations: list[Delegation]) -> str:
     """Honest orchestrator answer when delegations are used up without a grounded FINAL."""
+    observation_bits: list[str] = []
+    for d in delegations:
+        if d.result is None:
+            continue
+        for step in d.result.steps:
+            for tname, obs in zip(step.allowed, step.observations):
+                if not grounding.observation_is_useful(obs):
+                    continue
+                clipped = grounding.clip_observation(obs, 220)
+                observation_bits.append(f"{tname}: {clipped}")
+    if observation_bits:
+        joined = "; ".join(observation_bits)
+        if len(observation_bits) == 1:
+            return f"Based on tool results: {joined}"
+        return f"Based on tool results: {joined}"
+
     notes: list[str] = []
     for d in delegations:
         if d.result and d.result.final_answer:
-            notes.append(d.result.final_answer.strip())
-        for step in (d.result.steps if d.result else []):
-            for obs in step.observations:
-                if grounding.extract_claim_tokens(obs):
-                    return (
-                        f"Based on tool results: {grounding.clip_observation(obs, 400)} "
-                        f"(for: {task})"
-                    )
+            fa = d.result.final_answer.strip()
+            evidence = "\n".join(
+                o for s in d.result.steps for o in s.observations
+            )
+            if not grounding.final_grounding_issue(fa, evidence):
+                return fa
+            notes.append(fa)
     if notes:
         return notes[-1]
     return f"Could not verify an answer for: {task}"

@@ -20,7 +20,7 @@ _UNVERIFIED_RE = re.compile(
 )
 # Specific factual tokens: money, decimals, ISO dates, large integers.
 _CLAIM_TOKEN_RE = re.compile(
-    r"\$?\d+\.\d{2,}"
+    r"\$?\d+\.\d+"
     r"|\$\d+(?:\.\d+)?"
     r"|\b\d{4}-\d{2}-\d{2}\b"
     r"|\b\d{5,}\b",
@@ -38,7 +38,7 @@ _NOISE_OBS_RE = re.compile(
 )
 _FACTUAL_TASK_RE = re.compile(
     r"\b(stock|share|price|quote|ticker|crypto|weather|temperature|how much|"
-    r"current value|worth|cost)\b",
+    r"current value|worth|cost|compute|calculate|tip|percent)\b",
     re.I,
 )
 _EVASIVE_FINAL_RE = re.compile(
@@ -117,6 +117,14 @@ def final_grounding_issue(final: str, evidence: str, *,
             "use real tool results."
         )
     if _UNVERIFIED_RE.search(final):
+        claims = extract_claim_tokens(final)
+        if claims and evidence.strip():
+            unmatched = sorted(c for c in claims if c not in evidence)
+            if not unmatched:
+                return (
+                    "FINAL cites values supported by observations but hedges with "
+                    "uncertainty; answer directly using the tool result."
+                )
         return None
 
     claims = extract_claim_tokens(final)

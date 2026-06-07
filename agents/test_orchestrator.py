@@ -27,7 +27,8 @@ class _StubBrain(Brain):
 
 def _run_result(principal: str, *, blocked: list[str] | None = None,
                 allowed: list[str] | None = None,
-                observations: list[str] | None = None) -> loop.RunResult:
+                observations: list[str] | None = None,
+                final_answer: str | None = None) -> loop.RunResult:
     from agents.loop import RunResult, Step
 
     blocked = blocked or []
@@ -39,6 +40,9 @@ def _run_result(principal: str, *, blocked: list[str] | None = None,
         allowed=allowed,
         observations=obs,
     )]
+    fa = final_answer
+    if fa is None:
+        fa = "worker done" if allowed else None
     return RunResult(
         principal=principal,
         task="sub",
@@ -46,7 +50,7 @@ def _run_result(principal: str, *, blocked: list[str] | None = None,
         authorized=allowed,
         denied=blocked,
         steps=steps,
-        final_answer="worker done" if allowed else None,
+        final_answer=fa,
         stopped_reason="final" if allowed else "blocked",
     )
 
@@ -185,6 +189,38 @@ class OrchestratorTests(unittest.TestCase):
         )
         self.assertIsNotNone(issue)
         self.assertIn("placeholder", issue or "")
+
+    def test_synthesize_when_exhausted_joins_multiple_delegations(self) -> None:
+        delegations = [
+            orchestrator.Delegation(
+                worker=SUPPORT_AGENT,
+                subtask="weather Berlin",
+                result=_run_result(
+                    SUPPORT_AGENT,
+                    allowed=["weather"],
+                    observations=["Berlin: +20°C, partly cloudy"],
+                ),
+            ),
+            orchestrator.Delegation(
+                worker=OPS_AGENT,
+                subtask="15% tip on 84",
+                result=_run_result(
+                    OPS_AGENT,
+                    allowed=["python"],
+                    observations=["12.6"],
+                    final_answer=(
+                        "The computation result is 12.6, but I could not verify."
+                    ),
+                ),
+            ),
+        ]
+        answer = orchestrator._synthesize_when_exhausted(
+            "weather Berlin and compute tip", delegations,
+        )
+        self.assertIn("weather", answer)
+        self.assertIn("python", answer)
+        self.assertIn("12.6", answer)
+        self.assertNotIn("could not verify", answer.lower())
 
     def test_delegation_routing_hint_after_stock_failure(self) -> None:
         d = orchestrator.Delegation(

@@ -44,6 +44,35 @@ class GroundingTests(unittest.TestCase):
         )
         self.assertIsNone(issue)
 
+    def test_final_rejects_single_decimal_place_without_evidence(self) -> None:
+        issue = grounding.final_grounding_issue(
+            "12.6",
+            "",
+            require_evidence=True,
+        )
+        self.assertIsNotNone(issue)
+        self.assertIn("observations", issue or "")
+
+    def test_final_accepts_single_decimal_from_python(self) -> None:
+        issue = grounding.final_grounding_issue(
+            "The 15% tip is 12.6 dollars.",
+            "12.6",
+        )
+        self.assertIsNone(issue)
+
+    def test_final_rejects_hedged_answer_when_evidence_supports(self) -> None:
+        issue = grounding.final_grounding_issue(
+            "The result is 12.6, but I could not verify against observations.",
+            "12.6",
+        )
+        self.assertIsNotNone(issue)
+        self.assertIn("hedges", issue or "")
+
+    def test_compute_task_expects_concrete_answer(self) -> None:
+        self.assertTrue(
+            grounding.task_expects_concrete_answer("compute 15% tip on $84 with python")
+        )
+
     def test_completeness_rejects_evasive_stock_final(self) -> None:
         issue = grounding.final_completeness_issue(
             "what is AAPL stock price today",
