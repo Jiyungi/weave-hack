@@ -1,6 +1,7 @@
 # Core model + adaptation stack (real model, no mocks)
 torch>=2.3
-transformers>=4.44
+# vLLM 0.11.x breaks on transformers 5.x (all_special_tokens_extended removed)
+transformers>=4.55.2,<5.0.0
 accelerate>=0.33
 datasets>=2.20
 peft>=0.12

@@ -61,14 +61,20 @@ What this does (~15–30 min first run):
 - Node 20 + `npm install` in `ui/`
 - Local **redis-server** if not using cloud-only Redis
 
-### 2. Install tmux and vLLM (brain — optional but needed for chat)
+### 2. Install tmux (if missing)
 
 ```bash
 sudo apt-get install -y tmux
+```
 
-# vLLM for Qwen2.5-14B brain (CUDA 12.8 / driver ~570 boxes):
+`setup_brev.sh` already installs **vLLM 0.11** and pins **transformers below 5.0** via `scripts/ensure_brain_deps.sh`. Skip brain install with `INSTALL_VLLM=0 bash setup_brev.sh`.
+
+If brain crashed after a manual `pip install`, re-pin on the box:
+
+```bash
 source ~/venv/bin/activate
-VIRTUAL_ENV=~/venv uv pip install "vllm==0.11.0" --torch-backend=cu128
+cd ~/weave-hack
+bash scripts/ensure_brain_deps.sh
 ```
 
 Without vLLM, governance demos (Track A/B) still work; orchestrator chat reasoning is degraded.

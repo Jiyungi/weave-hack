@@ -42,7 +42,7 @@ if [ -f requirements.txt ]; then
   python -m pip install -r requirements.txt
 else
   # running before the repo is cloned
-  python -m pip install "transformers>=4.44" accelerate datasets peft bitsandbytes \
+  python -m pip install "transformers>=4.55.2,<5.0.0" accelerate datasets peft bitsandbytes \
               "fastapi>=0.111" "uvicorn[standard]>=0.30" "pydantic>=2.7"
 fi
 python - <<'PY'
@@ -135,6 +135,13 @@ elif command -v apt-get >/dev/null 2>&1; then
 else
   echo "  ERROR: redis-server required — install manually" >&2
   exit 1
+fi
+
+echo "=== [brain] vLLM + transformers pin (chat brain; skip with INSTALL_VLLM=0) ==="
+if [ -f scripts/ensure_brain_deps.sh ]; then
+  bash scripts/ensure_brain_deps.sh
+else
+  echo "  ensure_brain_deps.sh not found — pin manually: pip install 'transformers>=4.55.2,<5.0.0'"
 fi
 
 echo ""
