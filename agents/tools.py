@@ -566,12 +566,19 @@ def schemas() -> list[dict]:
 
 
 # Register the Tier 1–3 extra tools (file/shell/patch/note, knowledge & data,
-# utilities). Isolated in tools_extra so this core module stays small; wrapped
-# so a bug in the extras can never break the built-in tools.
+# utilities). Isolated in tools_extra so this core module stays small. When
+# tools is imported first, register_all() runs here. When tools_extra is
+# imported first, it self-registers at the end of its own module instead — so
+# the partial-init AttributeError below is expected and harmless (the extras
+# still load via that path). Only a genuinely unexpected error is reported.
 try:
     from . import tools_extra as _tools_extra
 
     _tools_extra.register_all()
+except (ImportError, AttributeError):
+    # Circular import in progress: tools_extra is mid-init and will self-register
+    # once fully loaded. Nothing to do here.
+    pass
 except Exception as _extra_err:  # pragma: no cover - defensive
     import sys as _sys
 

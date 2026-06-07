@@ -1161,3 +1161,15 @@ _MORE_TOOLS: list[Tool] = [
          sample_args=["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222", "8.8.4.4"],
          executor=_ip_info, arg_mode="gate", needle="ip_info("),
 ]
+
+
+# Self-register at import so the extras are present regardless of import order.
+# tools.py also triggers this when imported first, but when something imports
+# tools_extra FIRST (e.g. scripts/mint_tools), tools.py's bottom hook runs while
+# this module is only partially initialized and can't see register_all yet.
+# Registering here — after every tool is defined — closes that gap. register()
+# replaces by name, so double-registration (both paths firing) is harmless.
+try:
+    register_all()
+except Exception:  # pragma: no cover - defensive; never block import
+    pass
