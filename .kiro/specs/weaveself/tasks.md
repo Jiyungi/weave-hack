@@ -88,19 +88,19 @@ tracks — for example wave 2 runs Track A's `2.2/2.3/3.1`, Track B's `5.2–5.7
       `interactions:<unit_label>` and the `RedisClientApi` TypeScript interface
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 2. Track A — Serving Engine (critical path) — _Owner: Engineer A / Track A_
-  - [ ] 2.1 Implement Base_Model loading and the resident serving engine
+- [x] 2. Track A — Serving Engine (critical path) — _Owner: Engineer A / Track A_
+  - [x] 2.1 Implement Base_Model loading and the resident serving engine
     - Load the instruct Base_Model exactly once per process using the `base_model` metadata id;
       cache loaded gate tensors keyed by `adapter_id`
     - _Requirements: 6.1, 7.1_
 
-  - [ ] 2.2 Implement per-request gate application and generation/scoring
+  - [x] 2.2 Implement per-request gate application and generation/scoring
     - Apply an adapter's gate tensors via forward hooks for a single request and always clear
       them in a `finally` block; generate pure base when `adapter_id` is null; compute
       teacher-forced NLL and perplexity in `score`
     - _Requirements: 6.3, 7.2, 7.3, 8.2_
 
-  - [ ] 2.3 Implement adapter listing and unknown-adapter error handling
+  - [x] 2.3 Implement adapter listing and unknown-adapter error handling
     - Expose the loadable `adapter_id` set; raise `AdapterNotLoadable` naming a missing
       `adapter_id` before any forward-pass mutation
     - _Requirements: 2.3, 7.5_
@@ -121,15 +121,15 @@ tracks — for example wave 2 runs Track A's `2.2/2.3/3.1`, Track B's `5.2–5.7
     - **Property 9: /adapters reflects the loadable set**
     - **Validates: Requirements 2.3, 8.3**
 
-- [ ] 3. Track A — Train_Adapter and Inference API — _Owner: Engineer A / Track A_
-  - [ ] 3.1 Implement the NKT-Mirror `train_adapter` training loop
+- [x] 3. Track A — Train_Adapter and Inference API — _Owner: Engineer A / Track A_
+  - [x] 3.1 Implement the NKT-Mirror `train_adapter` training loop
     - Train ~5K activation-gating parameters on the frozen instruct base without updating base
       weights; write the Adapter_File pair with `train_rows` equal to consumed rows and
       `unit_label`/`unit_type` equal to arguments; serialize to ≤ 200,000 bytes and set
       `size_bytes`
     - _Requirements: 6.2, 6.3, 6.4, 9.1, 9.2_
 
-  - [ ] 3.2 Implement train_adapter input error handling
+  - [x] 3.2 Implement train_adapter input error handling
     - Raise `DatasetNotReadable` naming an unreadable `dataset_path` and `InsufficientTrainingData`
       for a zero-row dataset, writing no Adapter_File in either case
     - _Requirements: 9.4, 9.5_
@@ -150,7 +150,7 @@ tracks — for example wave 2 runs Track A's `2.2/2.3/3.1`, Track B's `5.2–5.7
     - **Property 11: Unreadable dataset path errors and produces no adapter**
     - **Validates: Requirements 9.4**
 
-  - [ ] 3.7 Implement the FastAPI Inference_API service
+  - [x] 3.7 Implement the FastAPI Inference_API service
     - Wire `/generate`, `/score`, `/adapters`, `/train` to the Serving_Engine and `train_adapter`,
       returning populated `tokens`/`latency_ms`; ensure `POST /train` returns the same
       `adapter_path` as the direct call; return HTTP 422 naming the offending field on malformed

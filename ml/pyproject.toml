@@ -18,6 +18,23 @@ dependencies = [
 dev = [
     "pytest>=8.0,<9",
     "hypothesis>=6.100,<7",
+    # FastAPI + httpx let the Inference_API service tests run with the
+    # in-process TestClient without a live server.
+    "fastapi>=0.110,<1",
+    "httpx>=0.27,<1",
+]
+# The Inference_API HTTP service (FastAPI). Kept as an optional extra so the
+# contracts/engine install stays light; the StubBackend default makes the app
+# runnable without the heavy ``serving`` (torch) extra.
+api = [
+    "fastapi>=0.110,<1",
+]
+# Heavy ML runtime deps for real Base_Model serving (HFBackend). NOT a hard
+# runtime dependency: the StubBackend and the contracts work without these, so
+# the contracts/test install stays light and CI never downloads multi-GB weights.
+serving = [
+    "torch>=2.2,<3",
+    "transformers>=4.40,<5",
 ]
 
 [tool.setuptools.packages.find]

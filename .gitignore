@@ -15,6 +15,16 @@ app/dist/
 *.log
 npm-debug.log*
 
+# Env files — keep real secrets out of git, but track the *.example template
+.env
+.env.*
+!.env.example
+app/.env
+app/.env.local
+
+# HuggingFace model cache
+.hf-cache/
+
 # OS / editor
 .DS_Store
 Thumbs.db
