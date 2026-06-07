@@ -127,28 +127,47 @@ def train_adapter(
     base_model: str = "Qwen/Qwen2.5-1.5B-Instruct",
     out_dir: str | None = None,
     day_index: int = 0,
+    method: str | None = None,
 ) -> str:
     """Train an NKT-Mirror gate set on the frozen instruct base and write an Adapter_File.
 
-    Reads Training_Pairs from ``dataset_path``, fits ~5,000 per-channel
-    activation gates (the frozen base is never mutated), and writes the
-    ``adapter_<id>.safetensors`` + ``adapter_<id>.json`` pair. Returns the
-    ``.safetensors`` adapter path.
+    ``method`` selects the trainer:
+
+    * ``"nkt"`` (or env ``WEAVESELF_TRAIN=nkt``/``real``) runs the REAL
+      gradient-descent NKT-Mirror trainer (:func:`weaveself.training.nkt_trainer.train_adapter_nkt`)
+      on the frozen instruct model — this is the production path that actually
+      personalizes.
+    * ``"fast"`` (the default, used by CI/unit tests) runs the lightweight
+      dependency-free gate fitter below: deterministic, numpy-only, no model
+      download. It is a TEST FIXTURE, not a real personalization trainer, and
+      must not be used for the demo.
 
     The written metadata ``train_rows`` equals the number of consumed rows
     (Req 9.1) and ``unit_label`` / ``unit_type`` equal the supplied arguments
     (Req 9.1, 9.2). ``size_bytes`` is stamped from the real serialized size and
     is bounded well under 200,000 bytes (Req 6.4).
 
-    Input error handling (design.md "Training errors (Track A)"):
-
-    * An unreadable / non-existent / malformed ``dataset_path`` raises
-      :class:`DatasetNotReadable` naming the path, and NO Adapter_File is
-      written (Req 9.4).
-    * A readable dataset with zero training rows raises
-      :class:`InsufficientTrainingData`, and NO Adapter_File is written
-      (Req 9.5).
+    Input error handling: an unreadable/malformed ``dataset_path`` raises
+    :class:`DatasetNotReadable`; a zero-row dataset raises
+    :class:`InsufficientTrainingData`; no Adapter_File is written in either case
+    (Req 9.4, 9.5).
     """
+    import os as _os
+
+    resolved = (method or _os.environ.get("WEAVESELF_TRAIN", "fast")).strip().lower()
+    if resolved in ("nkt", "real", "nktmirror"):
+        from weaveself.training.nkt_trainer import train_adapter_nkt
+
+        return train_adapter_nkt(
+            dataset_path,
+            unit_label,
+            unit_type,
+            base_model=base_model,
+            out_dir=out_dir,
+            day_index=day_index,
+        )
+
+    # ----- fast/test fixture path (numpy, no model) -----
     # Req 9.4: a missing/unreadable/malformed dataset path must raise a typed
     # error naming the path before anything is written to out_dir.
     try:
