@@ -8,7 +8,9 @@ OpenMirror treats **both** personalization and permissions as the same object: *
 
 Built on [NTK-Mirror](https://github.com/leochlon/ntkmirror) skill arithmetic — LoRA can't subtract cleanly; prompts can't revoke cleanly. This can.
 
-**Sponsor integrations:** [Redis](https://redis.io) (required state + audit), [CopilotKit](https://copilotkit.ai) (dashboard UI), [Weights & Biases / Weave](https://wandb.ai) (tracing).
+**Sponsor integrations:** [Redis](https://redis.io) (required state + audit), [Weave / W&B](https://wandb.ai/godsonajodo2020-microsoft/OpenMirror/overview) (tracing + proof), [CopilotKit](https://copilotkit.ai) (agent chat + HITL in the Next.js dashboard), MCP (external tool registration), OpenAI optional (memory curation before mint).
+
+**Demo video:** [Google Drive](https://drive.google.com/drive/folders/1cMMrqpS31PtUyuELDcg8pZwPFppcR54k?usp=sharing)
 
 ---
 
@@ -45,8 +47,10 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · editable source: 
 | **Orchestrator** | 8200 | Planner + role workers (`research-agent`, `ops-agent`, `support-agent`) |
 | **Control plane** | 8100 | Policy, sessions, memory log, `/personalize`, runtime guard |
 | **NTK engine** | 8000 | Train / compose / act on frozen Qwen2.5-7B |
-| **Brain** | 8001 | Qwen2.5-14B via vLLM — reasoning only |
+| **Brain** | 8001 | Qwen2.5-14B via vLLM — orchestration planning only (not the governed actuator) |
 | **Memory** | CLI | `python -m memory.consolidate` — curate → `/personalize` → delete logs |
+
+The frozen **7B + composed NTK controllers** govern tool emission; the **14B brain** delegates across role workers.
 
 **WeaveSelf reference:** `ml/weaveself/` (merged from `main`) holds the original consolidation research code; OpenMirror's production path mints style controllers via the NTK engine only. Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Adapter contract: [`PERSONALIZATION.md`](PERSONALIZATION.md).
 
@@ -54,9 +58,10 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · editable source: 
 
 ## Live demo
 
-1. **Memory** — Chat with `user_id` → **Consolidate** → `user_style-{id}` minted; raw logs deleted.
-2. **Governance** — Revoke `weather` → governed model stops emitting it.
-3. **Both** — Orchestrator with `user_id` + tools → style + governed capabilities across **role workers** (see `python verify_orchestrator.py`).
+1. **Tools** — Stock price via `ops-agent`; expand delegations for ALLOWED tool steps.
+2. **Governance** — Revoke a capability (session) → REQUEST → approve → tool works again; audit stream in Redis.
+3. **Multi-agent** — *"Weather in Berlin and compute 15% tip on $84 with python"* → `support-agent` + `ops-agent`.
+4. **Memory** — Chat with `user_id` → **Consolidate** → `user_style-{id}` minted; raw logs deleted.
 
 **Multi-agent verification:** `python verify_orchestrator.py` (offline stub) or `--live` against `:8200`.
 
@@ -65,8 +70,7 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · editable source: 
 ## Run it
 
 ```bash
-export BRANCH=unified
-cd ~/weave-hack && bash setup_brev.sh
+cd ~/weave-hack && bash setup_brev.sh   # defaults to branch main
 bash start_all.sh
 brev port-forward <instance> --port 3000:3000   # laptop → :3000
 ```
