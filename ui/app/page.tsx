@@ -16,23 +16,32 @@ export default function Home() {
   return (
     <DashboardProvider>
       <CopilotActions />
-      <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-line bg-bg px-6 py-4">
-        <h1 className="text-base font-semibold">OpenMirror Control Plane</h1>
-        <span className="text-[12px] text-muted">
-          capability governance — grant · revoke · compose
-        </span>
+      <header className="sticky top-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-bg/70 px-6 py-3.5 backdrop-blur-md">
+        <div className="flex items-center gap-3">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-grad text-[13px] font-bold text-[#04122b] shadow-[0_4px_14px_-4px_rgba(91,157,255,0.6)]">
+            OM
+          </span>
+          <div className="leading-tight">
+            <h1 className="bg-accent-grad bg-clip-text text-[15px] font-semibold text-transparent">
+              OpenMirror Control Plane
+            </h1>
+            <span className="text-[11px] text-muted">
+              capability governance — grant · revoke · compose
+            </span>
+          </div>
+        </div>
         <div className="ml-auto">
           <HealthBar />
         </div>
       </header>
 
-      <main className="grid grid-cols-1 gap-4 p-4 pb-24 lg:grid-cols-2 lg:px-6">
-        <div className="flex flex-col gap-4">
+      <main className="mx-auto grid max-w-[1400px] grid-cols-1 gap-5 p-5 pb-28 lg:grid-cols-2 lg:px-6">
+        <div className="flex flex-col gap-5">
           <SetupPanel />
           <SessionPanel />
           <RevokePanel />
         </div>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           <ActPanel />
           <AuditFeed />
         </div>

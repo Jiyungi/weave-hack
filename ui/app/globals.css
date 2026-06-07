@@ -3,22 +3,65 @@
 @tailwind utilities;
 
 :root {
-  --bg: #0b0f17;
-  --panel: #131a26;
-  --panel2: #0f1521;
-  --line: #243044;
-  --text: #e6edf6;
-  --muted: #8a99b0;
+  --bg: #080b12;
+  --panel: #121926;
+  --panel2: #0d1320;
+  --line: #222e44;
+  --text: #eaf0f9;
+  --muted: #93a2bb;
   --accent: #5b9dff;
+  --accent2: #8b7bff;
   --good: #3fb950;
   --bad: #f85149;
   --warn: #d29922;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  /* Layered radial glows give the flat dark page some depth. */
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(900px 500px at 12% -8%, rgba(91, 157, 255, 0.10), transparent 60%),
+    radial-gradient(820px 480px at 100% 0%, rgba(139, 123, 255, 0.10), transparent 55%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: rgba(91, 157, 255, 0.32);
+  color: #fff;
+}
+
+/* Quiet, on-theme scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2c3a55 transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2c3a55;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a4c6e;
+  background-clip: padding-box;
+}
+
+/* Consistent keyboard focus across inputs/buttons */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px rgba(91, 157, 255, 0.55);
+  border-radius: 7px;
 }
 
 /* CopilotKit dark theme tweaks */
@@ -26,4 +69,6 @@ body {
   --copilot-kit-primary-color: var(--accent);
   --copilot-kit-background-color: var(--panel);
   --copilot-kit-secondary-color: var(--panel2);
+  --copilot-kit-separator-color: var(--line);
+  --copilot-kit-muted-color: var(--muted);
 }

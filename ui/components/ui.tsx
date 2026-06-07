@@ -15,13 +15,14 @@ export function Card({
   return (
     <div
       className={clsx(
-        "rounded-[10px] border border-line bg-panel p-4",
+        "animate-fade-in rounded-xl border border-line bg-panel/80 p-5 shadow-card backdrop-blur-sm transition-colors duration-200 hover:border-line-strong",
         className,
       )}
     >
-      <h2 className="mb-3 text-[13px] font-medium uppercase tracking-wider text-muted">
+      <h2 className="mb-4 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-muted">
+        <span className="h-3 w-1 rounded-full bg-accent-grad" />
         {title}
-        {badge && <span className="ml-2 inline-block">{badge}</span>}
+        {badge && <span className="ml-1 inline-block normal-case">{badge}</span>}
       </h2>
       {children}
     </div>
@@ -36,15 +37,15 @@ export function Pill({
   variant?: "good" | "bad" | "warn" | "muted";
 }) {
   const styles = {
-    good: "border-[#1c3d24] bg-[#0e1f13] text-good",
-    bad: "border-[#3d1c1c] bg-[#1f0e0e] text-bad",
-    warn: "border-line bg-panel2 text-warn",
+    good: "border-good/30 bg-good/10 text-good",
+    bad: "border-bad/30 bg-bad/10 text-bad",
+    warn: "border-warn/30 bg-warn/10 text-warn",
     muted: "border-line bg-panel2 text-muted",
   };
   return (
     <span
       className={clsx(
-        "inline-block rounded-full border px-2 py-0.5 font-mono text-[11px]",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] font-medium",
         styles[variant],
       )}
     >
@@ -65,9 +66,12 @@ export function Btn({
   variant?: "primary" | "ghost" | "danger";
 }) {
   const styles = {
-    primary: "bg-accent text-[#04122b]",
-    ghost: "border border-line bg-transparent text-text",
-    danger: "bg-bad text-[#1a0202]",
+    primary:
+      "bg-accent-grad text-[#04122b] shadow-[0_4px_14px_-4px_rgba(91,157,255,0.55)] hover:brightness-110",
+    ghost:
+      "border border-line bg-panel2/60 text-text hover:border-line-strong hover:bg-panel2",
+    danger:
+      "bg-bad text-[#1a0202] shadow-[0_4px_14px_-4px_rgba(248,81,73,0.5)] hover:brightness-110",
   };
   return (
     <button
@@ -75,7 +79,7 @@ export function Btn({
       onClick={onClick}
       disabled={disabled}
       className={clsx(
-        "rounded-[7px] px-3 py-2 text-[13px] font-semibold disabled:cursor-not-allowed disabled:opacity-50",
+        "rounded-lg px-3.5 py-2 text-[13px] font-semibold transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100",
         styles[variant],
       )}
     >
@@ -86,7 +90,9 @@ export function Btn({
 
 export function Label({ children }: { children: ReactNode }) {
   return (
-    <label className="mb-1 mt-2 block text-[12px] text-muted">{children}</label>
+    <label className="mb-1 mt-3 block text-[11px] font-medium uppercase tracking-wide text-muted">
+      {children}
+    </label>
   );
 }
 
@@ -105,7 +111,7 @@ export function Input({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full rounded-[7px] border border-line bg-panel2 px-2.5 py-2 text-[13px] text-text"
+      className="w-full rounded-lg border border-line bg-panel2 px-3 py-2 text-[13px] text-text placeholder:text-muted/60 transition-colors hover:border-line-strong focus:border-accent focus:outline-none"
     />
   );
 }
@@ -123,7 +129,7 @@ export function Select({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-[7px] border border-line bg-panel2 px-2.5 py-2 text-[13px] text-text"
+      className="w-full cursor-pointer rounded-lg border border-line bg-panel2 px-3 py-2 text-[13px] text-text transition-colors hover:border-line-strong focus:border-accent focus:outline-none"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>
@@ -135,14 +141,12 @@ export function Select({
 }
 
 export function Status({ children }: { children: ReactNode }) {
-  return (
-    <div className="mt-2 min-h-4 text-[12px] text-muted">{children}</div>
-  );
+  return <div className="mt-2 min-h-4 text-[12px] text-muted">{children}</div>;
 }
 
 export function Pre({ children }: { children: string }) {
   return (
-    <pre className="mt-2 overflow-auto whitespace-pre-wrap rounded-[7px] border border-line bg-panel2 p-2.5 font-mono text-[12px]">
+    <pre className="mt-2 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-panel2/70 p-3 font-mono text-[12px] leading-relaxed text-text/90">
       {children}
     </pre>
   );

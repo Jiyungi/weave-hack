@@ -18,4 +18,5 @@ venv/
 # Node / Next.js
 ui/node_modules/
 ui/.next/
+ui/*.tsbuildinfo
 ui/out/
