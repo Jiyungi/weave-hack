@@ -12,7 +12,7 @@ import os
 import urllib.error
 import urllib.request
 
-from control_plane.trace import op
+from control_plane.trace import op, trace_headers
 
 
 CP_URL = os.environ.get("CP_URL", "http://localhost:8100")
@@ -24,12 +24,9 @@ class ControlPlaneError(RuntimeError):
 
 def _request(method: str, path: str, body: dict | None = None, timeout: float = 1800) -> dict:
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(
-        CP_URL + path,
-        data=data,
-        method=method,
-        headers={"Content-Type": "application/json"} if body is not None else {},
-    )
+    headers = {"Content-Type": "application/json"} if body is not None else {}
+    headers.update(trace_headers())  # propagate Weave trace across the HTTP hop
+    req = urllib.request.Request(CP_URL + path, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())

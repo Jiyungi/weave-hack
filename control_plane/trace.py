@@ -57,6 +57,86 @@ def enabled() -> bool:
     return _ENABLED
 
 
+def current_call():
+    """The Weave call currently executing, or None if tracing is off / no call."""
+    if not _ENABLED or _weave is None:
+        return None
+    try:
+        return _weave.get_current_call()
+    except Exception:
+        return None
+
+
+def trace_headers() -> dict:
+    """Headers that propagate the current trace to a downstream HTTP service.
+
+    Inject these into outgoing requests; the receiving service's
+    ``WeaveContextMiddleware`` re-parents its ops under this call, so a single
+    trace tree spans process boundaries (Track D -> Track B -> Track A).
+    """
+    call = current_call()
+    if call is None:
+        return {}
+    try:
+        return {"x-weave-trace-id": str(call.trace_id), "x-weave-parent-id": str(call.id)}
+    except Exception:
+        return {}
+
+
+@contextlib.contextmanager
+def remote_parent(trace_id: str | None, parent_id: str | None):
+    """Server-side: nest subsequent ops under a remote parent call.
+
+    Reconstructs a stand-in parent ``Call`` from the propagated ids and pushes it
+    onto Weave's call stack. A no-op when tracing is off or ids are missing, and
+    swallows any failure so request handling is never affected.
+    """
+    if not _ENABLED or _weave is None or not trace_id or not parent_id:
+        yield
+        return
+    try:
+        from weave.trace.context import call_context as _cc
+        from weave.trace.context import weave_client_context as _wcc
+        from weave.trace.weave_client import Call as _Call
+        try:
+            project_id = _wcc.get_weave_client()._project_id()
+        except Exception:
+            project_id = ""
+        parent = _Call(_op_name="remote.parent", trace_id=trace_id,
+                       project_id=project_id, parent_id=None, inputs={}, id=parent_id)
+        with _cc.set_call_stack([parent]):
+            yield
+    except Exception:
+        yield
+
+
+class WeaveContextMiddleware:
+    """Pure-ASGI middleware that re-parents this service's ops under a remote
+    caller's trace, propagated via ``x-weave-*`` headers.
+
+    Pure ASGI (not Starlette ``BaseHTTPMiddleware``) so the contextvar set here
+    propagates into the sync route handler's threadpool call — BaseHTTPMiddleware
+    runs the endpoint in a separate task and would drop it.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or not _ENABLED:
+            await self.app(scope, receive, send)
+            return
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1")
+                   for k, v in scope.get("headers", [])}
+        tid = headers.get("x-weave-trace-id")
+        pid = headers.get("x-weave-parent-id")
+        if not (tid and pid):
+            await self.app(scope, receive, send)
+            return
+        with remote_parent(tid, pid):
+            await self.app(scope, receive, send)
+
+
 def attributes(values: dict):
     """Context manager attaching searchable metadata to the enclosing trace.
 

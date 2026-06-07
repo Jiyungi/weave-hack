@@ -6,7 +6,7 @@ import urllib.error
 import urllib.request
 
 from . import config
-from .trace import op
+from .trace import op, trace_headers
 
 
 class TrackAError(RuntimeError):
@@ -15,8 +15,9 @@ class TrackAError(RuntimeError):
 
 def _post(path: str, body: dict) -> dict:
     data = json.dumps(body).encode()
-    req = urllib.request.Request(config.TRACK_A_URL + path, data=data,
-                                 headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    headers.update(trace_headers())  # propagate Weave trace across the HTTP hop
+    req = urllib.request.Request(config.TRACK_A_URL + path, data=data, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=1800) as r:
             return json.loads(r.read())

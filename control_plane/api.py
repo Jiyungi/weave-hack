@@ -16,6 +16,8 @@ from .schemas import (ActReq, PersonalizeReq, PolicyReq, RegisterReq,
                       RegisterSkillReq, RevokeReq, SessionReq, TrainSkillReq)
 
 app = FastAPI(title="OpenMirror Control Plane", version="0.1")
+# Re-parent ops under a caller's trace (Track D -> here) for one unified tree.
+app.add_middleware(trace.WeaveContextMiddleware)
 
 _LANDING = """<!doctype html>
 <html lang="en">
