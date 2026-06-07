@@ -2,22 +2,37 @@
   "name": "weaveself-app",
   "version": "0.1.0",
   "private": true,
-  "description": "WeaveSelf Track C — CopilotKit runtime, React frontend, Redis client, and shared contracts (Node/TS).",
+  "description": "WeaveSelf Track C - CopilotKit React app, runtime endpoint, Redis client, and shared contracts (Node/TS).",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "dev": "vite",
+    "build": "vite build",
+    "build:lib": "tsc",
+    "preview": "vite preview",
+    "server": "node --experimental-strip-types src/server/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@copilotkit/react-core": "1.10.6",
+    "@copilotkit/react-ui": "1.10.6",
+    "@copilotkit/runtime": "1.10.6",
     "ioredis": "^5.4.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "redis": "^4.7.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "express": "^4.21.2",
     "fast-check": "^3.23.1",
     "typescript": "^5.7.2",
+    "vite": "^6.0.7",
     "vitest": "^2.1.8"
   }
 }

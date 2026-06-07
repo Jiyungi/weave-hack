@@ -15,6 +15,9 @@ dependencies = [
     "langgraph>=0.2,<1",
 ]
 
+[project.scripts]
+weaveself-serve = "weaveself.serving.server:run_server"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0,<9",
@@ -29,6 +32,11 @@ dev = [
 # runnable without the heavy ``serving`` (torch) extra.
 api = [
     "fastapi>=0.110,<1",
+    "uvicorn>=0.27,<1",
+    # Loads the repo-root .env for the server + prepare_demo entrypoints.
+    "python-dotenv>=1.0,<2",
+    # Live Redis_Layer client (file fallback used when unavailable).
+    "redis>=5.0,<6",
 ]
 # Heavy ML runtime deps for real Base_Model serving (HFBackend). NOT a hard
 # runtime dependency: the StubBackend and the contracts work without these, so

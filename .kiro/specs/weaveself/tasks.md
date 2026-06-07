@@ -166,7 +166,7 @@ tracks — for example wave 2 runs Track A's `2.2/2.3/3.1`, Track B's `5.2–5.7
       showing visibly different output, with no dependency on Redis, the batch graph, or frontend
     - _Requirements: 10.1, 10.2, 23.1_
 
-- [ ] 4. Checkpoint - Track A verified
+- [x] 4. Checkpoint - Track A verified
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 5. Track B — Data pipeline and GPT curation — _Owner: Engineer B / Track B_
@@ -270,7 +270,7 @@ tracks — for example wave 2 runs Track A's `2.2/2.3/3.1`, Track B's `5.2–5.7
       emit an `eval_results.json` containing a Confusion_Matrix, with no frontend dependency
     - _Requirements: 16.1, 16.2_
 
-- [ ] 8. Checkpoint - Track B verified
+- [x] 8. Checkpoint - Track B verified
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 9. Track C — Redis layer and client API — _Owner: Engineer C / Track C_
@@ -331,20 +331,20 @@ tracks — for example wave 2 runs Track A's `2.2/2.3/3.1`, Track B's `5.2–5.7
 - [x] 11. Checkpoint - Track C verified
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 12. Integration milestone and fallback demos — _Owner: All engineers (A + B + C converge)_
-  - [ ] 12.1 Replace mocks with real cross-track dependencies and wire the end-to-end loop
+- [x] 12. Integration milestone and fallback demos — _Owner: All engineers (A + B + C converge)_
+  - [x] 12.1 Replace mocks with real cross-track dependencies and wire the end-to-end loop
     - Swap each Mock_Dependency for the real Track A inference API, real Track B adapters and eval
       artifacts, and the real Track C Redis_Layer and Frontend_App; serve each batch-produced
       Adapter_File through the Inference_API by `adapter_id` retrieved via the Redis_Client_API
     - _Requirements: 21.1, 21.2_
 
-  - [ ] 12.2 Pre-bake demo adapters and wire Unit-selection routing to proof visuals
+  - [x] 12.2 Pre-bake demo adapters and wire Unit-selection routing to proof visuals
     - Pre-bake Adapter_Files for the demo `day_index` values; on Unit selection, route to the
       correct Adapter, generate a response, and display the corresponding `eval_results.json`
       proof visuals
     - _Requirements: 21.3, 21.4_
 
-  - [ ] 12.3 Implement critical-path governance and blocked-state fallback
+  - [x] 12.3 Implement critical-path governance and blocked-state fallback
     - Keep mocks wired while Track A serving is unverified; record the blocked-integration state
       when serving cannot be verified; provide the Track B confusion-matrix demo and the per-track
       fallback demo entry points
@@ -355,7 +355,7 @@ tracks — for example wave 2 runs Track A's `2.2/2.3/3.1`, Track B's `5.2–5.7
       handshake/streaming between Node/TS and Python
     - _Requirements: 21.1, 21.2, 21.3, 21.4, 18.1, 18.2_
 
-- [ ] 13. Final checkpoint - Ensure all tests pass
+- [x] 13. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

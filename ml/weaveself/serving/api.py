@@ -125,6 +125,13 @@ def create_app(
     def adapters() -> list[str]:
         return engine.list_adapters()
 
+    @app.get("/adapters/meta", response_model=list[dict])
+    def adapters_meta() -> list[dict]:
+        # Full metadata for each loadable adapter (adapter_id, unit_label,
+        # size_bytes, ...) so the frontend Unit selector reflects the REAL
+        # served adapters rather than mock data.
+        return engine.list_adapter_meta()
+
     @app.post("/train", response_model=TrainResponse)
     def train(req: TrainRequest) -> TrainResponse:
         # Equivalence to the direct call (Req 9.3): pass the request fields

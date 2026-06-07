@@ -1,0 +1,193 @@
+:root {
+  --ws-bg: #0d1117;
+  --ws-panel: #161b22;
+  --ws-border: #30363d;
+  --ws-text: #e6edf3;
+  --ws-accent: #3884ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--ws-bg);
+  color: var(--ws-text);
+}
+
+.ws-app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.ws-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--ws-border);
+  padding-bottom: 0.75rem;
+}
+
+.ws-header h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.ws-tabs button {
+  background: transparent;
+  color: var(--ws-text);
+  border: 1px solid var(--ws-border);
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  margin-left: 0.5rem;
+  cursor: pointer;
+}
+
+.ws-tabs button.active {
+  background: var(--ws-accent);
+  border-color: var(--ws-accent);
+  color: white;
+}
+
+.ws-main {
+  margin-top: 1rem;
+}
+
+.ws-unit-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.ws-unit-picker select {
+  background: var(--ws-panel);
+  color: var(--ws-text);
+  border: 1px solid var(--ws-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  min-width: 18rem;
+}
+
+.ws-unit-meta {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.ws-chat-window {
+  height: 70vh;
+  border: 1px solid var(--ws-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ws-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.ws-card {
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ws-card h2 {
+  margin-top: 0;
+  font-size: 1rem;
+}
+
+.ws-card table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ws-card th,
+.ws-card td {
+  border: 1px solid var(--ws-border);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.ws-heatmap td {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ws-bars li {
+  display: grid;
+  grid-template-columns: 7rem 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ws-bar-track {
+  background: #0d1117;
+  border: 1px solid var(--ws-border);
+  border-radius: 4px;
+  height: 0.9rem;
+  overflow: hidden;
+}
+
+.ws-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--ws-accent);
+}
+
+.ws-bar-value {
+  font-size: 0.8rem;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.ws-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ws-example h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+
+.ws-example-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.ws-example-cols p {
+  font-size: 0.85rem;
+  margin: 0.25rem 0 0;
+}
+
+.ws-source {
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+@media (max-width: 800px) {
+  .ws-grid,
+  .ws-example-cols {
+    grid-template-columns: 1fr;
+  }
+}

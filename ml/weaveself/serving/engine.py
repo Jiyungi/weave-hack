@@ -122,6 +122,25 @@ class ServingEngine:
                     ids.add(adapter_id)
         return sorted(ids)
 
+    def list_adapter_meta(self) -> list[dict]:
+        """Return metadata dicts for every loadable adapter (id + unit_label + size).
+
+        Reads each Adapter_File JSON sidecar in ``adapters_dir`` so the frontend
+        can build its Unit selector from the REAL adapters served by this engine
+        (adapter_id, unit_label, size_bytes, ...). Adapters whose sidecar cannot
+        be read are skipped rather than failing the whole listing.
+        """
+        if self._adapters_dir is None:
+            return []
+        metas: list[dict] = []
+        for adapter_id in self.list_adapters():
+            try:
+                meta, _gates = read_adapter_file(self._adapters_dir, adapter_id)
+            except Exception:
+                continue
+            metas.append(meta.model_dump())
+        return metas
+
     def _resolve_gates(self, adapter_id: str | None) -> GateTensors | None:
         """Resolve gate tensors for a request: ``None`` adapter -> pure base."""
         if adapter_id is None:

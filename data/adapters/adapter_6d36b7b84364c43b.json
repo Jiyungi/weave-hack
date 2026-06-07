@@ -1,0 +1,10 @@
+{
+  "adapter_id": "6d36b7b84364c43b",
+  "base_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "unit_type": "category",
+  "unit_label": "fitness",
+  "train_rows": 8,
+  "trained_at": "2024-01-01T00:00:00+00:00",
+  "day_index": 0,
+  "size_bytes": 20432
+}

@@ -1,0 +1,55 @@
+{
+  "perplexity": {
+    "base": 97.1892747723396,
+    "adapter": 97.02597624424759,
+    "context_memory": 56.519882529990724
+  },
+  "confusion_matrix": {
+    "labels": [
+      "cooking",
+      "fitness",
+      "finance"
+    ],
+    "matrix": [
+      [
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ]
+    ]
+  },
+  "size_bytes": {
+    "nktmirror": 20432,
+    "lora": 18464768
+  },
+  "examples": [
+    {
+      "prompt": "How do I improve my sauce?",
+      "base": " How can I make a better sauce?\nThere are many things you can try to improve your sauces. First, it's",
+      "adapter": " Answer according to: This is a great way to make a sauce from scratch. It's very versatile and can be used",
+      "reference": "Reduce it slowly, mount it with cold butter off the heat, and season until it tastes bright and balanced."
+    },
+    {
+      "prompt": "How do I improve my squat?",
+      "base": " What exercises should I be doing?\n\nWhat are the best ways to build a strong and powerful squat?\n\nPlease tell me if",
+      "adapter": " I want to be able to lift more weight.\nImproving your squat is a great goal! Here are some tips to",
+      "reference": "Brace hard, sit between your hips, drive through mid-foot, and add weight only when depth stays clean."
+    },
+    {
+      "prompt": "How do I plan for a big purchase?",
+      "base": " How can you prepare financially before buying something?\n\nTo prepare financially before purchasing an item, consider the following steps:\n\n1.",
+      "adapter": " How can I save money on the purchase?\n\nPlanning for a Big Purchase:\n\n1. Set a budget: Determine how much",
+      "reference": "Set a target date, save into a separate high-yield account, and avoid touching long-term investments."
+    }
+  ]
+}

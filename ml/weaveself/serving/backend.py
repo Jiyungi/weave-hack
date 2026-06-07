@@ -256,13 +256,42 @@ class HFBackend(ModelBackend):
 
     DEFAULT_BASE_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 
-    def __init__(self, device: str | None = None) -> None:
+    def __init__(
+        self, device: str | None = None, torch_dtype: str | None = None
+    ) -> None:
         self._load_count = 0
         self._base_model_id: str | None = None
         self._device = device
+        # Optional dtype hint (e.g. "float32"/"float16"/"bfloat16"); applied at
+        # load time. ``None`` lets transformers pick its default. Stored as a
+        # plain string so importing this module never imports ``torch``.
+        self._torch_dtype = torch_dtype
         self._model = None
         self._tokenizer = None
         self._active_gate_sig: str | None = None
+
+    @staticmethod
+    def _resolve_dtype(torch_dtype: str | None):  # pragma: no cover - requires torch
+        """Map a dtype name to a real ``torch.dtype`` (``None`` -> default)."""
+        if not torch_dtype:
+            return None
+        import torch
+
+        name = str(torch_dtype).strip().lower()
+        mapping = {
+            "float32": torch.float32,
+            "fp32": torch.float32,
+            "float16": torch.float16,
+            "fp16": torch.float16,
+            "half": torch.float16,
+            "bfloat16": torch.bfloat16,
+            "bf16": torch.bfloat16,
+        }
+        if name in ("auto", "default", "none"):
+            return None
+        if name not in mapping:
+            raise ValueError(f"unsupported MODEL_DTYPE: {torch_dtype!r}")
+        return mapping[name]
 
     @property
     def load_count(self) -> int:
@@ -292,7 +321,13 @@ class HFBackend(ModelBackend):
             ) from exc
 
         self._tokenizer = AutoTokenizer.from_pretrained(base_model_id)
-        self._model = AutoModelForCausalLM.from_pretrained(base_model_id)
+        dtype = self._resolve_dtype(self._torch_dtype)
+        if dtype is not None:  # pragma: no cover - hardware/dtype dependent
+            self._model = AutoModelForCausalLM.from_pretrained(
+                base_model_id, torch_dtype=dtype
+            )
+        else:
+            self._model = AutoModelForCausalLM.from_pretrained(base_model_id)
         self._model.eval()
         if self._device:  # pragma: no cover - hardware dependent
             self._model.to(self._device)
@@ -347,9 +382,30 @@ class HFBackend(ModelBackend):
 
                     def _hook(_mod, _inp, out, _scale=scale):
                         # Per-channel activation scaling on the layer output.
+                        # The resident model's activation width (Qwen2.5-1.5B
+                        # MLP output == hidden_size) may differ from the gate
+                        # vector's channel count, and its dtype/device follow
+                        # the loaded model. Align the gate vector to the live
+                        # activation before scaling so a real adapter steers
+                        # activations without a shape/dtype mismatch: gate
+                        # channels beyond the activation width are dropped and
+                        # any remaining activation channels stay neutral (1.0).
+                        activation = out[0] if isinstance(out, tuple) else out
+                        width = activation.shape[-1]
+                        s = _scale.to(dtype=activation.dtype, device=activation.device)
+                        if s.shape[-1] != width:
+                            if s.shape[-1] > width:
+                                s = s[:width]
+                            else:
+                                pad = torch.ones(
+                                    width - s.shape[-1],
+                                    dtype=s.dtype,
+                                    device=s.device,
+                                )
+                                s = torch.cat([s, pad], dim=0)
                         if isinstance(out, tuple):
-                            return (out[0] * _scale, *out[1:])
-                        return out * _scale
+                            return (activation * s, *out[1:])
+                        return activation * s
 
                     handles.append(module.register_forward_hook(_hook))
             yield
@@ -367,7 +423,19 @@ class HFBackend(ModelBackend):
         import torch
 
         self._require_loaded()
-        inputs = self._tokenizer(prompt, return_tensors="pt")
+        # Qwen2.5 is an *instruct* model: wrap the prompt in the chat template
+        # (<|im_start|>user ... <|im_start|>assistant) so it answers as an
+        # assistant instead of autocompleting raw text. Fall back to the bare
+        # prompt only if the tokenizer has no chat template.
+        if getattr(self._tokenizer, "chat_template", None):
+            text = self._tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        else:
+            text = prompt
+        inputs = self._tokenizer(text, return_tensors="pt")
         if self._device:
             inputs = {k: v.to(self._device) for k, v in inputs.items()}
         prompt_len = int(inputs["input_ids"].shape[-1])
