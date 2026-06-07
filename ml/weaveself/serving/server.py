@@ -31,7 +31,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from weaveself.serving.api import create_app
-from weaveself.serving.backend import HFBackend, ModelBackend, StubBackend
+from weaveself.serving.backend import HFBackend, ModelBackend
 from weaveself.serving.engine import ServingEngine
 
 # Local browser UI origins allowed to call the Inference_API from a browser.
@@ -83,13 +83,20 @@ def _resolve_path(value: str) -> str:
 
 
 def build_backend() -> ModelBackend:
-    """Construct the configured serving backend from the environment."""
-    backend_kind = os.environ.get("WEAVESELF_BACKEND", "stub").strip().lower()
-    if backend_kind == "hf":
-        device = os.environ.get("TORCH_DEVICE", "").strip() or _default_device()
-        dtype = os.environ.get("MODEL_DTYPE", "").strip() or None
-        return HFBackend(device=device, torch_dtype=dtype)
-    return StubBackend()
+    """Construct the real serving backend (production is HFBackend only).
+
+    ``WEAVESELF_BACKEND`` must be ``hf``; the server never silently serves a
+    stub model. Set ``WEAVESELF_BACKEND=hf`` (default in ``.env``).
+    """
+    backend_kind = os.environ.get("WEAVESELF_BACKEND", "hf").strip().lower()
+    if backend_kind != "hf":
+        raise RuntimeError(
+            f"WEAVESELF_BACKEND={backend_kind!r} is not allowed in the server; "
+            "production serving requires the real model (WEAVESELF_BACKEND=hf)."
+        )
+    device = os.environ.get("TORCH_DEVICE", "").strip() or _default_device()
+    dtype = os.environ.get("MODEL_DTYPE", "").strip() or None
+    return HFBackend(device=device, torch_dtype=dtype)
 
 
 def build_engine() -> ServingEngine:

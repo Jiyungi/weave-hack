@@ -1,10 +1,10 @@
 {
-  "adapter_id": "b8a8ef2002a0662a",
+  "adapter_id": "finance-d0-7d3561eb",
   "base_model": "Qwen/Qwen2.5-1.5B-Instruct",
   "unit_type": "category",
   "unit_label": "finance",
   "train_rows": 8,
   "trained_at": "2024-01-01T00:00:00+00:00",
   "day_index": 0,
-  "size_bytes": 20432
+  "size_bytes": 37392
 }

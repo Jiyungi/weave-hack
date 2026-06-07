@@ -2,19 +2,16 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import type { AdapterMeta } from "../contracts/index.js";
 import {
-  MOCK_ADAPTERS,
-  MOCK_EVAL_RESULTS,
-} from "./mock-eval-results.js";
-import {
   buildDashboardViewModel,
   renderDashboardHtml,
   visibleAdapters,
+  type EvalResults,
 } from "./eval-results.js";
 
 function meta(adapterId: string, sizeBytes: number): AdapterMeta {
   return {
     adapter_id: adapterId,
-    base_model: "Qwen/Qwen2.5-7B-Instruct",
+    base_model: "Qwen/Qwen2.5-1.5B-Instruct",
     unit_type: "category",
     unit_label: adapterId,
     train_rows: 1,
@@ -23,6 +20,24 @@ function meta(adapterId: string, sizeBytes: number): AdapterMeta {
     size_bytes: sizeBytes,
   };
 }
+
+// Inline fixture (NOT a shipped mock): used only to exercise the pure
+// view-model builders in this unit test.
+const FIXTURE_EVAL: EvalResults = {
+  perplexity: { base: 97.2, adapter: 68.9, context_memory: 56.5 },
+  confusion_matrix: {
+    labels: ["cooking", "fitness", "finance"],
+    matrix: [
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+    ],
+  },
+  size_bytes: { nktmirror: 37392, lora: 18464768 },
+  examples: [
+    { prompt: "How do I improve my sauce?", base: "b", adapter: "a", reference: "r" },
+  ],
+};
 
 describe("Dashboard view model (Requirement 17)", () => {
   it("Feature: weaveself, Property 29: Adapter library filters zero-size adapters", () => {
@@ -37,13 +52,14 @@ describe("Dashboard view model (Requirement 17)", () => {
     );
   });
 
-  it("renders the Track C standalone fallback dashboard from mock eval_results.json", () => {
-    const viewModel = buildDashboardViewModel(MOCK_ADAPTERS, MOCK_EVAL_RESULTS);
+  it("builds and renders the dashboard from an eval_results.json payload", () => {
+    const adapters = [meta("cooking-d0", 37392), meta("fitness-d0", 37392), meta("empty_pending", 0)];
+    const viewModel = buildDashboardViewModel(adapters, FIXTURE_EVAL);
     const html = renderDashboardHtml(viewModel);
 
-    expect(viewModel.adapterLibrary.map((adapter) => adapter.adapter_id)).not.toContain("empty_pending_adapter");
-    expect(viewModel.heatmap).toHaveLength(MOCK_EVAL_RESULTS.confusion_matrix.labels.length);
-    expect(viewModel.examples).toHaveLength(MOCK_EVAL_RESULTS.examples.length);
+    expect(viewModel.adapterLibrary.map((adapter) => adapter.adapter_id)).not.toContain("empty_pending");
+    expect(viewModel.heatmap).toHaveLength(FIXTURE_EVAL.confusion_matrix.labels.length);
+    expect(viewModel.examples).toHaveLength(FIXTURE_EVAL.examples.length);
     expect(viewModel.sizeChart.map((item) => item.label)).toEqual(["NKT-Mirror", "LoRA"]);
     expect(html).toContain('data-view="adapter-library"');
     expect(html).toContain('data-view="confusion-matrix"');

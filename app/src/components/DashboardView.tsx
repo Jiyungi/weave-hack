@@ -1,44 +1,49 @@
 import { useEffect, useMemo, useState } from "react";
 import { buildDashboardViewModel } from "../frontend/eval-results.js";
 import type { EvalResults } from "../frontend/eval-results.js";
-import { MOCK_ADAPTERS, MOCK_EVAL_RESULTS } from "../frontend/mock-eval-results.js";
-import { EVAL_RESULTS_URL } from "../config.js";
+import type { AdapterMeta } from "../contracts/index.js";
+import { EVAL_RESULTS_URL, INFERENCE_API_URL } from "../config.js";
 
-type LoadState = "mock" | "loading" | "loaded" | "error";
+type LoadState = "loading" | "loaded" | "error";
 
 /**
  * DASHBOARD VIEW (Requirement 17.2–17.5).
  *
- * Renders, via the existing view-model builders in frontend/eval-results.ts:
+ * Renders, via the view-model builders in frontend/eval-results.ts:
  *  - the adapter library, hiding zero-size adapters (Req 17.2)
  *  - the confusion-matrix heatmap (Req 17.3)
  *  - base-vs-adapter example pairs with reference text (Req 17.4)
  *  - the NKT-Mirror vs LoRA size chart (Req 17.5)
  *
- * Data source: a real eval_results.json from VITE_EVAL_RESULTS_URL when set,
- * otherwise the bundled MOCK_EVAL_RESULTS so the dashboard renders before the
- * real eval runs.
+ * Data is LIVE only: the real eval_results.json (EVAL_RESULTS_URL) and the real
+ * adapter list from the Inference_API (/adapters/meta). There is no mock
+ * fallback — if the backend is unavailable the dashboard shows an error.
  */
 export function DashboardView(): JSX.Element {
-  const [results, setResults] = useState<EvalResults>(MOCK_EVAL_RESULTS);
+  const [results, setResults] = useState<EvalResults | null>(null);
+  const [adapters, setAdapters] = useState<readonly AdapterMeta[]>([]);
   const [state, setState] = useState<LoadState>("loading");
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch(EVAL_RESULTS_URL, { headers: { accept: "application/json" } });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+        const [evalRes, metaRes] = await Promise.all([
+          fetch(EVAL_RESULTS_URL, { headers: { accept: "application/json" } }),
+          fetch(`${INFERENCE_API_URL}/adapters/meta`, { headers: { accept: "application/json" } }),
+        ]);
+        if (!evalRes.ok) {
+          throw new Error(`eval_results.json HTTP ${evalRes.status}`);
         }
-        const payload = (await response.json()) as EvalResults;
+        const payload = (await evalRes.json()) as EvalResults;
+        const metas = metaRes.ok ? ((await metaRes.json()) as AdapterMeta[]) : [];
         if (!cancelled) {
           setResults(payload);
+          setAdapters(metas);
           setState("loaded");
         }
       } catch {
         if (!cancelled) {
-          setResults(MOCK_EVAL_RESULTS);
           setState("error");
         }
       }
@@ -48,21 +53,27 @@ export function DashboardView(): JSX.Element {
     };
   }, []);
 
-  const viewModel = useMemo(() => buildDashboardViewModel(MOCK_ADAPTERS, results), [results]);
-  const maxSize = Math.max(1, ...viewModel.sizeChart.map((item) => item.bytes));
+  const viewModel = useMemo(
+    () => (results ? buildDashboardViewModel(adapters, results) : null),
+    [adapters, results],
+  );
+  const maxSize = Math.max(1, ...(viewModel?.sizeChart.map((item) => item.bytes) ?? [1]));
+
+  if (state !== "loaded" || results === null || viewModel === null) {
+    return (
+      <section className="ws-dashboard" data-view="dashboard">
+        <p className="ws-source">
+          {state === "loading"
+            ? "Loading live eval results…"
+            : "Could not load live data. Start the Inference_API and run the eval (scripts/run_weave_eval) to populate eval_results.json."}
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="ws-dashboard" data-view="dashboard">
-      <p className="ws-source">
-        Source:{" "}
-        {state === "loaded"
-          ? `live eval_results.json (${EVAL_RESULTS_URL})`
-          : state === "error"
-            ? "mock (failed to load configured eval_results.json)"
-            : state === "loading"
-              ? "loading…"
-              : "bundled mock eval_results.json"}
-      </p>
+      <p className="ws-source">Source: live eval_results.json ({EVAL_RESULTS_URL})</p>
 
       <div className="ws-grid">
         <article className="ws-card">

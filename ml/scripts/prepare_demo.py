@@ -239,33 +239,19 @@ def _store_in_redis(
 
 
 def _build_engine(base_model_id: str, adapters_dir: Path, device: str, dtype: str):
-    """Build a resident engine on the real backend, falling back to stub.
+    """Build a resident engine on the REAL model backend (no mock fallback).
 
-    Returns ``(engine, backend_kind, note)``. ``backend_kind`` is ``"hf"`` for a
-    real model load or ``"stub"`` for the dependency-free fallback.
+    Returns ``(engine, "hf", note)``. Raises if the real model cannot load — the
+    demo is production and never silently falls back to a stub.
     """
+    from weaveself.serving.backend import HFBackend
     from weaveself.serving.engine import ServingEngine
 
-    try:
-        from weaveself.serving.backend import HFBackend
-
-        backend = HFBackend(device=device, torch_dtype=dtype)
-        engine = ServingEngine(
-            base_model_id, backend=backend, adapters_dir=str(adapters_dir)
-        )
-        return engine, "hf", f"real model on {device} ({dtype})"
-    except Exception as exc:  # pragma: no cover - depends on hardware/network
-        from weaveself.serving.backend import StubBackend
-
-        note = (
-            "real HFBackend could not load "
-            f"({type(exc).__name__}: {exc}); falling back to StubBackend"
-        )
-        print(f"[prepare_demo] WARNING: {note}", flush=True)
-        engine = ServingEngine(
-            base_model_id, backend=StubBackend(), adapters_dir=str(adapters_dir)
-        )
-        return engine, "stub", note
+    backend = HFBackend(device=device, torch_dtype=dtype)
+    engine = ServingEngine(
+        base_model_id, backend=backend, adapters_dir=str(adapters_dir)
+    )
+    return engine, "hf", f"real model on {device} ({dtype})"
 
 
 def _estimate_lora_size_bytes(engine, backend_kind: str) -> int:
@@ -441,11 +427,6 @@ def main(argv: list[str] | None = None) -> int:
         default=24,
         help="Max new tokens for the base-vs-adapter examples (kept small).",
     )
-    parser.add_argument(
-        "--stub",
-        action="store_true",
-        help="Force the dependency-free StubBackend (no model download/GPU).",
-    )
     args = parser.parse_args(argv)
 
     units = list(args.units)
@@ -479,19 +460,9 @@ def main(argv: list[str] | None = None) -> int:
     # 3. store in Redis
     _store_in_redis(units, adapters, adapters_dir, args.redis_url, redis_file)
     # 4. resident engine (real model, single load)
-    if args.stub:
-        from weaveself.serving.backend import StubBackend
-        from weaveself.serving.engine import ServingEngine
-
-        engine = ServingEngine(
-            args.base_model, backend=StubBackend(), adapters_dir=str(adapters_dir)
-        )
-        backend_kind, note = "stub", "forced StubBackend via --stub"
-        print(f"[prepare_demo] {note}", flush=True)
-    else:
-        engine, backend_kind, note = _build_engine(
-            args.base_model, adapters_dir, args.device, args.dtype
-        )
+    engine, backend_kind, note = _build_engine(
+        args.base_model, adapters_dir, args.device, args.dtype
+    )
     print(
         f"[prepare_demo] engine backend={backend_kind} "
         f"base_model_load_count={engine.base_model_load_count} ({note})",

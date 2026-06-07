@@ -3,7 +3,6 @@ import { CopilotKit } from "@copilotkit/react-core";
 import { ChatView } from "./components/ChatView.js";
 import { DashboardView } from "./components/DashboardView.js";
 import { buildUnitOptions, BASE_MODEL_OPTION } from "./units.js";
-import { MOCK_ADAPTERS } from "./frontend/mock-eval-results.js";
 import type { AdapterMeta } from "./contracts/index.js";
 import {
   COPILOTKIT_RUNTIME_URL,
@@ -16,22 +15,21 @@ import type { UnitOption } from "./frontend/chat.js";
 type Tab = "chat" | "dashboard";
 
 export function App(): JSX.Element {
-  // Load the REAL adapters served by the Inference_API so the Unit selector's
-  // adapter_id values match what /generate can actually serve. Falls back to
-  // the bundled mock metadata only if the live fetch fails.
-  const [adapters, setAdapters] = useState<readonly AdapterMeta[]>(MOCK_ADAPTERS);
+  // Load the REAL adapters served by the Inference_API. No mock fallback: if
+  // the API is unavailable the Unit list is just the Base_Model option.
+  const [adapters, setAdapters] = useState<readonly AdapterMeta[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     fetch(`${INFERENCE_API_URL}/adapters/meta`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((data: AdapterMeta[]) => {
-        if (!cancelled && Array.isArray(data) && data.length > 0) {
+        if (!cancelled && Array.isArray(data)) {
           setAdapters(data);
         }
       })
       .catch(() => {
-        /* keep MOCK_ADAPTERS fallback so the UI still renders */
+        /* API down: leave the list empty (Base_Model only) — no mock data */
       });
     return () => {
       cancelled = true;
