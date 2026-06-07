@@ -41,8 +41,14 @@ APPROVAL_POLL_S = float(os.environ.get("OPENMIRROR_APPROVAL_POLL_S", "2"))
 _OBS_MAX = int(os.environ.get("OPENMIRROR_OBS_MAX_CHARS", "600"))
 
 
+def _sanitize_obs(text: str) -> str:
+    if tools.looks_like_text(text):
+        return text
+    return "[observation omitted: binary or non-text response]"
+
+
 def _clip_obs(text: str) -> str:
-    one_line = " ".join(str(text).split())
+    one_line = " ".join(_sanitize_obs(str(text)).split())
     if len(one_line) <= _OBS_MAX:
         return one_line
     return one_line[: _OBS_MAX - 3] + "..."
@@ -503,7 +509,7 @@ def run(principal: str, skills: list[str], task: str, *,
         user_id: str | None = None,
         session_key: str | None = None,
         max_steps: int = 6,
-        max_new_tokens: int = 32,
+        max_new_tokens: int = 64,
         brain: Brain | None = None,
         tools_filter: list[str] | None = None,
         allow_requests: bool = True) -> RunResult:

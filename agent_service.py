@@ -75,7 +75,7 @@ class RunReq(BaseModel):
     task: str
     max_delegations: int = 6
     worker_max_steps: int = 6
-    worker_max_new_tokens: int = 32
+    worker_max_new_tokens: int = 64
     ensure_seeded: bool = True
     user_id: str | None = None
     chat_id: str | None = None
@@ -90,7 +90,7 @@ class AgentRunReq(BaseModel):
     compose_skills: list[str] | None = None
     user_id: str | None = None
     max_steps: int = 6
-    max_new_tokens: int = 32
+    max_new_tokens: int = 64
 
 
 class RevokeReq(BaseModel):

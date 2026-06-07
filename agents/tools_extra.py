@@ -490,10 +490,37 @@ def _translate(arg: str) -> str:
 
 
 def _stock_price(arg: str) -> str:
-    sym = arg.strip().lower().lstrip("$")
+    prior_re = re.compile(
+        r"\b(yesterday|previous|prior|last\s+close|last\s+day|prior\s+day)\b",
+        re.I,
+    )
+    raw = arg.strip()
+    want_prev = bool(prior_re.search(raw))
+    sym = prior_re.sub("", raw).strip()
+    sym = (sym.split()[0] if sym.split() else raw.split()[0]).lower().lstrip("$")
     if not re.match(r"^[a-z.\-]{1,10}$", sym):
-        raise ToolError("stock_price needs a ticker, e.g. NVDA")
+        raise ToolError("stock_price needs a ticker, e.g. NVDA or 'NVDA yesterday'")
     ticker = sym if "." in sym else f"{sym}.us"
+    display = sym.split(".")[0].upper()
+
+    if want_prev:
+        url = f"https://stooq.com/q/d/l/?s={ticker}&i=d"
+        try:
+            lines = _http_get(url, timeout=15).strip().splitlines()
+            if len(lines) < 3:
+                raise ValueError("no history")
+            header = lines[0].split(",")
+            rows = [line.split(",") for line in lines[1:] if line.strip()]
+            if len(rows) < 2:
+                raise ValueError("not enough rows")
+            fields = dict(zip(header, rows[-2]))
+            close = fields.get("Close")
+            if not close or close in ("N/D", ""):
+                return f"no price found for {display}"
+            return f"{display}: {close} (date {fields.get('Date', '?')}, previous trading day)"
+        except Exception as e:
+            raise ToolError(f"stock_price failed: {e}") from e
+
     url = f"https://stooq.com/q/l/?s={ticker}&f=sd2t2ohlcv&h&e=csv"
     try:
         body = _http_get(url, timeout=15).strip().splitlines()
@@ -502,8 +529,8 @@ def _stock_price(arg: str) -> str:
         fields = dict(zip(body[0].split(","), body[1].split(",")))
         close = fields.get("Close")
         if not close or close in ("N/D", ""):
-            return f"no price found for {sym.upper()}"
-        return f"{sym.upper()}: {close} (date {fields.get('Date','?')})"
+            return f"no price found for {display}"
+        return f"{display}: {close} (date {fields.get('Date','?')})"
     except Exception as e:
         raise ToolError(f"stock_price failed: {e}")
 
@@ -652,11 +679,12 @@ _EXTRA_TOOLS: list[Tool] = [
          sample_args=["good morning to French", "thank you to Japanese",
                       "let's build to Spanish", "see you soon to German", "hello to Italian"],
          executor=_translate, needle="translate("),
-    Tool(name="stock_price", description="Latest stock price. Arg: ticker symbol.",
+    Tool(name="stock_price",
+         description="Latest or previous trading-day close via Stooq. Arg: ticker or 'TICKER yesterday'.",
          prompt_template="User: what's the stock price of {arg}.\nAssistant:",
          completion_template=' stock_price("{arg}")',
          sample_args=["NVDA", "AAPL", "MSFT", "GOOGL", "TSLA"],
-         executor=_stock_price, needle="stock_price("),
+         executor=_stock_price, arg_mode="gate", needle="stock_price("),
     Tool(name="crypto_price", description="Latest crypto price in USD. Arg: coin name/symbol.",
          prompt_template="User: what's the price of {arg}.\nAssistant:",
          completion_template=' crypto_price("{arg}")',

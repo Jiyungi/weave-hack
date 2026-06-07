@@ -26,16 +26,18 @@ class _StubBrain(Brain):
 
 
 def _run_result(principal: str, *, blocked: list[str] | None = None,
-                allowed: list[str] | None = None) -> loop.RunResult:
+                allowed: list[str] | None = None,
+                observations: list[str] | None = None) -> loop.RunResult:
     from agents.loop import RunResult, Step
 
     blocked = blocked or []
     allowed = allowed or []
+    obs = observations if observations is not None else (["ok"] if allowed else [])
     steps = [Step(
         proposed_tool=blocked[0] if blocked else (allowed[0] if allowed else None),
         blocked=blocked,
         allowed=allowed,
-        observations=["ok"] if allowed else [],
+        observations=obs,
     )]
     return RunResult(
         principal=principal,
@@ -128,6 +130,82 @@ class OrchestratorTests(unittest.TestCase):
                 ensure_seeded=False,
             )
         self.assertEqual(result.final_answer, "ok now")
+
+    def test_final_grounding_rejects_ungrounded_price(self) -> None:
+        issue = orchestrator._final_grounding_issue(
+            "what's the stock price of NVDA yesterday",
+            "The price was $197.50 yesterday.",
+            [
+                orchestrator.Delegation(
+                    worker=OPS_AGENT,
+                    subtask="get price",
+                    result=_run_result(
+                        OPS_AGENT,
+                        allowed=["stock_price"],
+                        observations=["NVDA: 214.86 (date 2026-06-05, previous trading day)"],
+                    ),
+                ),
+            ],
+        )
+        self.assertIsNotNone(issue)
+        self.assertIn("not supported", issue or "")
+
+    def test_final_grounding_accepts_matching_price(self) -> None:
+        issue = orchestrator._final_grounding_issue(
+            "NVDA stock price yesterday",
+            "NVDA closed at $214.86 yesterday.",
+            [
+                orchestrator.Delegation(
+                    worker=OPS_AGENT,
+                    subtask="get price",
+                    result=_run_result(
+                        OPS_AGENT,
+                        allowed=["stock_price"],
+                        observations=["NVDA: 214.86 (date 2026-06-05, previous trading day)"],
+                    ),
+                ),
+            ],
+        )
+        self.assertIsNone(issue)
+
+    def test_final_grounding_rejects_placeholders(self) -> None:
+        issue = orchestrator._final_grounding_issue(
+            "stock price",
+            "The answer is {{output}}",
+            [],
+        )
+        self.assertIsNotNone(issue)
+        self.assertIn("placeholder", issue or "")
+
+    @patch("agents.orchestrator.cp")
+    @patch("agents.orchestrator.loop.run")
+    @patch("agents.orchestrator.ensure_workers_seeded")
+    def test_does_not_overwrite_worker_requested_skills(self, _seed, mock_run,
+                                                        mock_cp) -> None:
+        mock_cp.state.return_value = {
+            "skills": {"web_search": "w", "python": "p", "stock_price": "s"},
+            "policies": {
+                RESEARCH_AGENT: ["web_search"],
+                OPS_AGENT: ["python", "stock_price"],
+                SUPPORT_AGENT: ["weather"],
+            },
+        }
+        mock_run.return_value = _run_result(OPS_AGENT, allowed=["stock_price"],
+                                            observations=["NVDA: 214.86"])
+        workers = default_workers()
+        original = {w.name: list(w.requested_skills) for w in workers}
+        brain = _StubBrain([
+            f"DELEGATE: {OPS_AGENT} | get NVDA price",
+            "FINAL: NVDA was $214.86",
+        ])
+        orchestrator.run(
+            "NVDA stock price",
+            workers=workers,
+            brain=brain,
+            ensure_seeded=False,
+        )
+        for w in workers:
+            self.assertEqual(w.requested_skills, original[w.name])
 
 
 if __name__ == "__main__":

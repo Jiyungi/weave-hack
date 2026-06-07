@@ -22,6 +22,7 @@ from typing import Optional
 
 from control_plane.trace import attributes, op
 
+from . import tools
 from . import cp, loop
 from .brain import Brain, get_brain
 from .workers import (
@@ -38,6 +39,8 @@ Worker = WorkerSpec
 
 def _clip(text: str, limit: int | None = None) -> str:
     limit = limit if limit is not None else _OBS_MAX
+    if not tools.looks_like_text(str(text)):
+        text = "[observation omitted: binary or non-text response]"
     one_line = " ".join(str(text).split())
     if len(one_line) <= limit:
         return one_line
@@ -55,7 +58,9 @@ needed tool, the run will be BLOCKED -- choose wisely):
 {worker_doc}
 
 Routing hints:
-- Web lookup, facts, news, documents -> research-agent
+- Web lookup, facts, news, documents -> research-agent (web_search first)
+- Stock / ticker / share price / crypto price -> ops-agent
+  Use stock_price("TICKER") or crypto_price("coin") — NOT http_fetch on finance sites
 - Python, calculator, files, data/code execution -> ops-agent
 - Weather only -> support-agent (support-agent CANNOT use calendar or python)
 
@@ -73,6 +78,8 @@ Rules:
   different worker before FINAL. Do not give up after one BLOCKED.
 - Do not FINAL until every sub-task either succeeded or you exhausted workers.
 - Stop with FINAL once you have enough information. Do not loop endlessly.
+- Cite a numeric price in FINAL only if that exact value appears in a delegation
+  observation. Do not invent prices or use placeholder text like {{output}}.
 """
 
 
@@ -81,6 +88,16 @@ _DELEGATE_RE = re.compile(
 )
 _FINAL_RE = re.compile(r"^FINAL:\s*(.+)\Z", re.MULTILINE | re.DOTALL)
 _THOUGHT_RE = re.compile(r"^THOUGHT:\s*(.+?)$", re.MULTILINE)
+_FINANCE_TASK_RE = re.compile(
+    r"\b(stock|share|price|ticker|crypto|market|trading|bitcoin|ethereum)\b",
+    re.I,
+)
+_PRICE_TOKEN_RE = re.compile(r"\$?\d+\.\d{2,}")
+_PLACEHOLDER_RE = re.compile(r"\{\{[^}]+\}\}")
+_UNVERIFIED_RE = re.compile(
+    r"\b(could not verify|unable to|no price|not found|couldn't find)\b",
+    re.I,
+)
 
 
 def _worker_doc(workers: list[WorkerSpec], snapshot: dict) -> str:
@@ -169,6 +186,45 @@ def _pending_blocked(delegations: list[Delegation]) -> bool:
     return delegations[-1].had_blocked()
 
 
+def _collect_observations(delegations: list[Delegation]) -> str:
+    parts: list[str] = []
+    for d in delegations:
+        if d.result is None:
+            continue
+        for step in d.result.steps:
+            parts.extend(step.observations)
+    return "\n".join(parts)
+
+
+def _normalize_price(token: str) -> str:
+    return token.lstrip("$")
+
+
+def _final_grounding_issue(task: str, final: str,
+                           delegations: list[Delegation]) -> str | None:
+    """Return a rejection message when FINAL is not supported by observations."""
+    if _PLACEHOLDER_RE.search(final):
+        return (
+            "FINAL contains template placeholders; delegate to a worker and "
+            "use real tool results."
+        )
+    if not _FINANCE_TASK_RE.search(task):
+        return None
+    obs_text = _collect_observations(delegations)
+    final_prices = {_normalize_price(p) for p in _PRICE_TOKEN_RE.findall(final)}
+    if not final_prices:
+        return None
+    if _UNVERIFIED_RE.search(final):
+        return None
+    obs_prices = {_normalize_price(p) for p in _PRICE_TOKEN_RE.findall(obs_text)}
+    if final_prices <= obs_prices:
+        return None
+    return (
+        "FINAL price not supported by tool observations; delegate to ops-agent "
+        "with stock_price or research-agent with web_search."
+    )
+
+
 @op(name="orch.ensure_workers_seeded")
 def ensure_workers_seeded(workers: list[WorkerSpec] | None = None, *,
                           reset_policies: bool = False) -> dict:
@@ -238,7 +294,7 @@ def run(task: str, *,
         workers: list[WorkerSpec] | None = None,
         max_delegations: int = 6,
         worker_max_steps: int = 6,
-        worker_max_new_tokens: int = 32,
+        worker_max_new_tokens: int = 64,
         brain: Brain | None = None,
         ensure_seeded: bool = True,
         user_id: str | None = None,
@@ -254,9 +310,6 @@ def run(task: str, *,
     brain = brain or get_brain()
     snap = cp.state()
     available = sorted(snap.get("skills", {}).keys())
-    if available:
-        for w in workers:
-            w.requested_skills = available
 
     sys_msg = ORCH_SYSTEM.format(worker_doc=_worker_doc(workers, snap), task=task)
     messages: list[dict] = [{"role": "system", "content": sys_msg}]
@@ -292,6 +345,11 @@ def run(task: str, *,
                                 "DELEGATE the same sub-task to a different worker first."
                             ),
                         })
+                        continue
+                    grounding = _final_grounding_issue(task, final, delegations)
+                    if grounding:
+                        messages.append({"role": "assistant", "content": raw.strip()})
+                        messages.append({"role": "user", "content": grounding})
                         continue
                     final_answer = final
                     stopped_reason = "final"

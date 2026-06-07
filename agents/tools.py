@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ast
 import datetime
+import gzip
 import json
 import operator
 import os
@@ -65,10 +66,36 @@ def extract_arg(completion: str, tool_name: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def looks_like_text(text: str) -> bool:
+    """True when decoded body is mostly printable (not gzip/binary garbage)."""
+    if not text:
+        return True
+    bad = sum(1 for c in text if ord(c) < 32 and c not in "\t\n\r")
+    return bad / len(text) <= 0.15
+
+
+def _decode_http_body(raw: bytes, content_encoding: str = "") -> str:
+    enc = content_encoding.lower()
+    if enc == "gzip" or (len(raw) >= 2 and raw[:2] == b"\x1f\x8b"):
+        try:
+            raw = gzip.decompress(raw)
+        except OSError:
+            pass
+    return raw.decode(errors="replace")
+
+
 def _http_get(url: str, timeout: int = 10) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": "OpenMirror-Agent/0.1"})
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "OpenMirror-Agent/0.1",
+            "Accept-Encoding": "identity",
+        },
+    )
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode(errors="replace")
+        raw = r.read()
+        enc = r.headers.get("Content-Encoding", "")
+        return _decode_http_body(raw, enc)
 
 
 def _weather(city: str) -> str:
@@ -248,6 +275,11 @@ def _http_fetch(url: str) -> str:
         body = _http_get(url, timeout=15)
     except urllib.error.URLError as e:
         raise ToolError(f"http_fetch failed: {e}") from e
+    if not looks_like_text(body):
+        raise ToolError(
+            "response looks binary/compressed; use stock_price or web_search "
+            "instead of scraping this URL"
+        )
     return body[:4000] + ("\n...[truncated]" if len(body) > 4000 else "")
 
 
