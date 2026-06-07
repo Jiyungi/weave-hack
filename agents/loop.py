@@ -283,18 +283,48 @@ def _execute_allowed(allowed: list[str], completion: str) -> list[str]:
     return out
 
 
-def _gate_and_execute(step: Step, session_id: str, tool_name: str, arg: str) -> None:
-    """Probe the skill's solo controller; run the brain's arg if the gate fires."""
+def _resolve_probe_arg(tool_name: str, mint_args: list[str], task: str,
+                       brain: Brain | None) -> str | None:
+    arg = teacher.pick_probe_arg(mint_args)
+    if arg:
+        return arg
+    if not task:
+        return None
+    try:
+        tool = tools.get(tool_name)
+        syn = teacher.synthesize_args(
+            tool.name, tool.description, "arg", context=task, n=3, brain=brain,
+        )
+        return teacher.pick_probe_arg(syn)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _govern_and_execute(step: Step, session_id: str, tool_name: str, arg: str,
+                        max_new_tokens: int, *, task: str = "",
+                        brain: Brain | None = None) -> None:
+    """Emit via the skill's solo controller (act_gate), never session compose."""
     tool = tools.get(tool_name)
     mint_args: list[str] = []
     try:
         mint_args = cp.state().get("skill_probe_args", {}).get(tool_name, [])
     except Exception:  # noqa: BLE001
         pass
-    probe_arg = teacher.pick_probe_arg(mint_args, list(tool.sample_args))
-    probe = tool.prompt_template.format(arg=probe_arg)
+    if tool.arg_mode in ("gate", "block"):
+        probe_arg = _resolve_probe_arg(tool_name, mint_args, task, brain)
+        if not probe_arg:
+            step.note = (f"no gate probe arg for {tool_name!r} "
+                         f"(re-register or REQUEST-mint with context)")
+            step.blocked = [tool_name]
+            return
+        prompt = tool.prompt_template.format(arg=probe_arg)
+        exec_arg = arg
+    else:
+        prompt = tool.prompt_template.format(arg=arg)
+        exec_arg = arg
     try:
-        governed = cp.act_gate(session_id, tool_name, probe, max_new_tokens=48)
+        governed = cp.act_gate(session_id, tool_name, prompt,
+                               max_new_tokens=max_new_tokens)
     except cp.ControlPlaneError as e:
         step.note = str(e)
         step.blocked = [tool_name]
@@ -302,19 +332,20 @@ def _gate_and_execute(step: Step, session_id: str, tool_name: str, arg: str) -> 
     step.governed_completion = governed.get("completion", "")
     step.allowed = list(governed.get("allowed_calls", []))
     step.blocked = list(governed.get("blocked_calls", []))
-    # Needle match (verify_service style) when the parser misses a partial emit.
     if tool_name not in step.allowed and tool.needle:
         if tool.needle in (step.governed_completion or ""):
             step.allowed = [tool_name]
     if tool_name in step.allowed:
-        step.observations = [tools.execute(tool_name, arg)]
+        step.observations = [tools.execute(tool_name, exec_arg)]
 
 
 @op(name="agent.step")
 def _step(brain: Brain, messages: list[dict], session_id: str,
           max_new_tokens: int, *,
           block_tools: frozenset[str] = frozenset(),
-          requestable: list[str] | None = None) -> Step:
+          requestable: list[str] | None = None,
+          task: str = "",
+          authorized: set[str] | None = None) -> Step:
     """One brain turn: reason, propose, govern, execute."""
     step = Step()
     raw = brain.chat(messages)
@@ -324,7 +355,14 @@ def _step(brain: Brain, messages: list[dict], session_id: str,
         step.final = final
         return step
     if request is not None:
-        step.requested_skill, step.request_reason = request
+        skill, reason = request
+        if authorized and skill in authorized:
+            step.note = f"already authorized for {skill!r}; use ACTION, not REQUEST"
+            step.requested_skill = skill
+            step.request_reason = reason
+            step.request_status = "denied"
+            return step
+        step.requested_skill, step.request_reason = skill, reason
         return step
     if action is None:
         step.note = _parse_error_hint(
@@ -338,18 +376,8 @@ def _step(brain: Brain, messages: list[dict], session_id: str,
         step.note = f"unknown tool {tool_name!r}; available: {sorted(tools.registry())}"
         return step
     tool = tools.get(tool_name)
-    if tool.arg_mode in ("block", "gate"):
-        # block (python) and gate (http_fetch/web_search): the controller only
-        # confirms the skill is expressible on a short probe; the brain's arg
-        # (long URL, query, or code block) is executed only if the gate fires.
-        _gate_and_execute(step, session_id, tool_name, arg)
-        return step
-    prompt = tool.prompt_template.format(arg=arg)
-    governed = cp.act(session_id, prompt, max_new_tokens=max_new_tokens)
-    step.governed_completion = governed.get("completion", "")
-    step.allowed = list(governed.get("allowed_calls", []))
-    step.blocked = list(governed.get("blocked_calls", []))
-    step.observations = _execute_allowed(step.allowed, step.governed_completion)
+    _govern_and_execute(step, session_id, tool_name, arg, max_new_tokens,
+                        task=task, brain=brain)
     return step
 
 
@@ -427,6 +455,10 @@ def _acquire_skill(principal: str, skill: str, reason: str, session_id: str,
         step.request_status = "denied"
         step.note = f"cannot acquire {skill!r}: no such tool exists to grant"
         return step
+    if not tools.key_configured(skill):
+        step.request_status = "denied"
+        step.note = f"{skill} requires an API key that is not configured"
+        return step
     sensitive, examples, description, source = _provision_meta(
         skill, catalog, context=_mint_context(reason, task), brain=brain,
     )
@@ -487,8 +519,11 @@ def run(principal: str, skills: list[str], task: str, *,
             catalog = set()
         seen = set(authorized)
         for name in sorted(catalog | set(tools.registry())):
-            if name not in seen:
-                requestable.append(name)
+            if name in seen:
+                continue
+            if not tools.key_configured(name):
+                continue
+            requestable.append(name)
 
     visible_tools = tools_filter if tools_filter is not None else authorized
 
@@ -520,6 +555,8 @@ def run(principal: str, skills: list[str], task: str, *,
                 brain, messages, session_id, max_new_tokens,
                 block_tools=_block_tools(),
                 requestable=requestable,
+                task=task,
+                authorized=set(authorized),
             )
             if step.final is not None:
                 steps.append(step)
@@ -529,6 +566,13 @@ def run(principal: str, skills: list[str], task: str, *,
             # Self-improvement: the brain asked for a capability it lacks.
             if step.requested_skill is not None and allow_requests:
                 skill = step.requested_skill
+                if step.request_status == "denied" and step.note:
+                    steps.append(step)
+                    messages.append({"role": "assistant",
+                                     "content": f"REQUEST: {skill} | {step.request_reason}"})
+                    messages.append({"role": "user", "content":
+                                     f"OBSERVATION: {step.note}"})
+                    continue
                 outcome = _acquire_skill(principal, skill, step.request_reason,
                                          session_id, catalog, task=task, brain=brain)
                 step.request_status = outcome.request_status

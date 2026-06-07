@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ag, OrchestratorResult } from "@/lib/api";
+import { ag, cp, OrchestratorResult } from "@/lib/api";
 import {
   ChatThread,
   loadThreads,
@@ -54,14 +54,19 @@ function AssistantBody({
 }
 
 export function ChatPanel() {
-  const { health, refresh } = useDashboard();
+  const { health, refresh, state } = useDashboard();
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeId, setActiveId] = useState<string>("");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deciding, setDeciding] = useState<string | null>(null);
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const agOk = !health.agError;
+
+  const awaitingApproval = (state.requests ?? []).filter(
+    (r) => r.status === "pending" && r.sensitive,
+  );
 
   const active = threads.find((t) => t.id === activeId) ?? threads[0];
 
@@ -92,6 +97,27 @@ export function ChatPanel() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [active?.messages.length, busy]);
+
+  useEffect(() => {
+    if (!busy) return;
+    const id = setInterval(() => {
+      void refresh();
+    }, 2000);
+    return () => clearInterval(id);
+  }, [busy, refresh]);
+
+  async function decideRequest(requestId: string, approve: boolean) {
+    setDeciding(requestId);
+    try {
+      if (approve) await cp.approveCapability(requestId);
+      else await cp.denyCapability(requestId);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeciding(null);
+    }
+  }
 
   function newChat() {
     const t = emptyThread();
@@ -278,8 +304,40 @@ export function ChatPanel() {
                   </div>
                 ))}
                 {busy && (
-                  <div className="mr-auto max-w-[92%] rounded-xl border border-line bg-panel2/60 px-3.5 py-2.5 text-[13px] text-muted">
-                    running orchestrator…
+                  <div className="mr-auto max-w-[92%] space-y-2">
+                    <div className="rounded-xl border border-line bg-panel2/60 px-3.5 py-2.5 text-[13px] text-muted">
+                      running orchestrator…
+                    </div>
+                    {awaitingApproval.map((r) => (
+                      <div
+                        key={r.request_id}
+                        className="rounded-xl border border-warn/40 bg-warn/[0.08] px-3.5 py-3 text-[12px]"
+                      >
+                        <div className="font-medium text-text">
+                          Waiting for you: <code>{r.skill}</code>
+                        </div>
+                        <div className="mt-1 text-muted">
+                          {r.principal} — {r.reason || "capability request"}
+                          {!r.has_examples ? null : " · mint ~36s if approved"}
+                        </div>
+                        <div className="mt-2 flex gap-2">
+                          <Btn
+                            variant="primary"
+                            disabled={deciding === r.request_id}
+                            onClick={() => void decideRequest(r.request_id, true)}
+                          >
+                            Approve
+                          </Btn>
+                          <Btn
+                            variant="ghost"
+                            disabled={deciding === r.request_id}
+                            onClick={() => void decideRequest(r.request_id, false)}
+                          >
+                            Deny
+                          </Btn>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
                 <div ref={bottomRef} />

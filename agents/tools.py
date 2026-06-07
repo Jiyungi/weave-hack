@@ -123,31 +123,116 @@ def _calendar(date_str: str) -> str:
     return f"{date_str} is a {d.strftime('%A')} ({when})"
 
 
+def _strip_html(text: str) -> str:
+    import html as html_lib
+    text = re.sub(r"<[^>]+>", " ", text)
+    return html_lib.unescape(re.sub(r"\s+", " ", text)).strip()
+
+
+def _ddg_instant(q: str) -> str | None:
+    url = (
+        "https://api.duckduckgo.com/?"
+        + urllib.parse.urlencode(
+            {"q": q, "format": "json", "no_redirect": "1", "no_html": "1"}
+        )
+    )
+    data = json.loads(_http_get(url))
+    if data.get("AbstractText"):
+        return (
+            f"{data.get('Heading') or q}: {data['AbstractText']} "
+            f"({data.get('AbstractURL', '')})"
+        )
+    if data.get("RelatedTopics"):
+        first = next(
+            (t for t in data["RelatedTopics"] if isinstance(t, dict) and t.get("Text")),
+            None,
+        )
+        if first:
+            return f"{q}: {first['Text']} ({first.get('FirstURL', '')})"
+    return None
+
+
+def _ddg_web_hits(q: str, *, limit: int = 5) -> list[tuple[str, str]]:
+    """Generic HTML web search (not the Instant Answer API)."""
+    data = urllib.parse.urlencode({"q": q}).encode()
+    req = urllib.request.Request(
+        "https://html.duckduckgo.com/html/",
+        data=data,
+        method="POST",
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; OpenMirror-Agent/0.1)",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        html = r.read().decode(errors="replace")
+    titles = re.findall(r'class="result__a"[^>]*>([^<]+)', html)
+    snippets = re.findall(
+        r'class="result__snippet"[^>]*>(.*?)</a>', html, re.DOTALL,
+    )
+    out: list[tuple[str, str]] = []
+    for title, snip in zip(titles, snippets):
+        out.append((_strip_html(title), _strip_html(snip)))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _wiki_search_hits(q: str, *, limit: int = 3) -> list[tuple[str, str]]:
+    url = (
+        "https://en.wikipedia.org/w/api.php?"
+        + urllib.parse.urlencode({
+            "action": "query",
+            "list": "search",
+            "srsearch": q,
+            "srlimit": str(limit),
+            "format": "json",
+        })
+    )
+    data = json.loads(_http_get(url))
+    hits = data.get("query", {}).get("search", [])
+    return [
+        (h.get("title", ""), _strip_html(h.get("snippet", "")))
+        for h in hits
+        if h.get("title")
+    ]
+
+
+def _format_hits(hits: list[tuple[str, str]]) -> str:
+    lines: list[str] = []
+    for i, (title, snip) in enumerate(hits, 1):
+        lines.append(f"{i}. {title}: {snip}")
+    return "\n".join(lines)
+
+
 def _web_search(q: str) -> str:
-    """DuckDuckGo Instant Answer -> Wikipedia fallback. No API key."""
+    """Web search: DDG Instant Answer -> DDG web -> Wikipedia search. No API key."""
     if not q.strip():
         raise ToolError("web_search requires a query")
-    # 1) DuckDuckGo Instant Answer (often has an Abstract for topic-style queries)
     try:
-        url = (
-            "https://api.duckduckgo.com/?"
-            + urllib.parse.urlencode(
-                {"q": q, "format": "json", "no_redirect": "1", "no_html": "1"}
-            )
-        )
-        data = json.loads(_http_get(url))
-        if data.get("AbstractText"):
-            return f"{data.get('Heading') or q}: {data['AbstractText']} ({data.get('AbstractURL','')})"
-        if data.get("RelatedTopics"):
-            first = next((t for t in data["RelatedTopics"] if isinstance(t, dict) and t.get("Text")), None)
-            if first:
-                return f"{q}: {first['Text']} ({first.get('FirstURL','')})"
+        hit = _ddg_instant(q)
+        if hit:
+            return hit
     except Exception:
         pass
-    # 2) Wikipedia REST summary on the query-as-title (works for many topics)
+    try:
+        hits = _ddg_web_hits(q)
+        if hits:
+            return _format_hits(hits)
+    except Exception:
+        pass
+    try:
+        hits = _wiki_search_hits(q)
+        if hits:
+            return _format_hits(hits)
+    except Exception:
+        pass
+    # Last resort: treat the query as a Wikipedia page title.
     try:
         title = urllib.parse.quote(q.replace(" ", "_"))
-        data = json.loads(_http_get(f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}"))
+        data = json.loads(
+            _http_get(f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}")
+        )
         if data.get("extract"):
             return f"{data.get('title', q)}: {data['extract']}"
     except Exception:
@@ -283,6 +368,7 @@ class Tool:
     sample_args: list[str]         # used to synthesize training_examples
     executor: Callable[[str], str]
     requires_key: bool = False
+    key_env: str | None = None     # env var that must be set when requires_key
     needle: str = ""               # what verify_risks would look for
     # Sensitive skills (e.g. executing code) require *human* approval even in the
     # hybrid auto/human self-improvement flow, regardless of requires_key.
@@ -361,7 +447,7 @@ _TOOLS: dict[str, Tool] = {
     ),
     "web_search": Tool(
         name="web_search",
-        description="Web search via DuckDuckGo + Wikipedia. Arg: query string.",
+        description="Web search via DuckDuckGo (instant + web) and Wikipedia. Arg: query string.",
         prompt_template="User: search the web for {arg}.\nAssistant:",
         completion_template=' web_search("{arg}")',
         sample_args=_QUERIES,
@@ -427,7 +513,9 @@ _TOOLS: dict[str, Tool] = {
         sample_args=_URLS,
         executor=_brightdata_scrape,
         requires_key=True,
+        key_env="BRIGHTDATA_API_KEY",
         needle="brightdata_scrape(",
+        arg_mode="gate",
     ),
 }
 
@@ -441,6 +529,18 @@ def get(name: str) -> Tool:
     if name not in _TOOLS:
         raise ToolError(f"unknown tool {name!r}")
     return _TOOLS[name]
+
+
+def key_configured(name: str) -> bool:
+    """True when a requires_key tool has its credentials in the environment."""
+    try:
+        t = get(name)
+    except ToolError:
+        return True
+    if not t.requires_key:
+        return True
+    env = t.key_env
+    return bool(os.environ.get(env, "").strip()) if env else False
 
 
 def register(tool: Tool) -> None:

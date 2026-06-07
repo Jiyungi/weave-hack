@@ -117,6 +117,17 @@ class State:
     def clear_principal_session(self, principal: str, scope: str | None = None) -> None:
         self._redis.hdel(_PRINC_SESS, self._principal_session_key(principal, scope))
 
+    def all_principal_session_ids(self, principal: str) -> list[str]:
+        """All sticky session ids for ``principal`` (every chat/user scope)."""
+        seen: set[str] = set()
+        out: list[str] = []
+        for key, sid in self._redis.hgetall(_PRINC_SESS).items():
+            if key.startswith(f"{principal}:"):
+                if sid not in seen:
+                    seen.add(sid)
+                    out.append(sid)
+        return out
+
     def set_request(self, request_id: str, req: dict) -> None:
         self._redis.hset(_REQ, request_id, json.dumps(req))
 

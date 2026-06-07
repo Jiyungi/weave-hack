@@ -233,8 +233,8 @@ def _delegate(worker: Worker, subtask: str, *, max_steps: int,
 @op(name="orch.run")
 def run(task: str, *,
         workers: list[Worker] | None = None,
-        max_delegations: int = 4,
-        worker_max_steps: int = 4,
+        max_delegations: int = 6,
+        worker_max_steps: int = 6,
         worker_max_new_tokens: int = 32,
         brain: Brain | None = None,
         ensure_seeded: bool = True,
@@ -297,20 +297,7 @@ def run(task: str, *,
                 messages.append({"role": "assistant", "content": raw.strip()})
                 messages.append({"role": "user", "content": d.summarize()})
                 continue
-            # A worker authorized for nothing is a valid governance state, not an
-            # error: the control plane can't compose a zero-skill session controller,
-            # so skip the (doomed) session and report the denial cleanly instead of
-            # surfacing a raw 400 from open_session.
-            eff = [s for s in (by_name[worker_name].requested_skills or available)
-                   if s in policies.get(worker_name, [])]
-            if not eff:
-                d = Delegation(worker=worker_name, subtask=subtask, thought=thought,
-                               note="authorized for no tools (policy is empty); cannot "
-                                    "act — grant it a skill under Capabilities & policies")
-                delegations.append(d)
-                messages.append({"role": "assistant", "content": raw.strip()})
-                messages.append({"role": "user", "content": d.summarize()})
-                continue
+            # A worker with an empty policy still runs — bootstrap session + REQUEST.
             d = _delegate(by_name[worker_name], subtask,
                           max_steps=worker_max_steps,
                           max_new_tokens=worker_max_new_tokens,

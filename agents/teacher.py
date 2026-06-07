@@ -131,16 +131,14 @@ def args_from_examples(skill: str, examples: list[dict]) -> list[str]:
     return out
 
 
-def pick_probe_arg(mint_args: list[str], fallback: list[str], *, max_len: int = 160) -> str:
-    """Gate probe: first mint arg that fits, else shortest mint, else static floor."""
-    for pool in (mint_args, fallback):
-        if not pool:
-            continue
-        for a in pool:
-            if a and len(a) <= max_len:
-                return a
-        return min(pool, key=len)
-    return "..."
+def pick_probe_arg(mint_args: list[str], *, max_len: int = 160) -> str | None:
+    """Gate probe: shortest mint arg that fits (from teacher / last register)."""
+    for a in mint_args:
+        if a and len(a) <= max_len:
+            return a
+    if mint_args:
+        return min(mint_args, key=len)
+    return None
 
 
 def _merge_args(*groups: list[str]) -> list[str]:
@@ -170,8 +168,8 @@ def mint_examples(
     """Build (prompt, completion) pairs for minting a controller on Track A.
 
     Returns ``(examples, source)`` where ``source`` is ``"teacher"`` when the
-    brain contributed args, else ``"static"``. Always folds in the tool's static
-    ``sample_args`` as a floor so mint never depends solely on brain output.
+    brain contributed args, else ``"static"``. Static ``sample_args`` are only
+    used when there is no agent context and the brain did not synthesize args.
     """
     from . import tools as tools_mod  # local import avoids cycle at module load
 
@@ -190,7 +188,9 @@ def mint_examples(
     except Exception:  # noqa: BLE001 — callers must always get mintable examples
         pass
 
-    args = _merge_args(synthesized, extra_args or [], tool.sample_args)
+    args = _merge_args(synthesized, extra_args or [])
+    if not args and not (context or "").strip():
+        args = _merge_args(args, tool.sample_args)
     if not args:
         args = list(tool.sample_args)
     examples = tool.examples_for_args(args)

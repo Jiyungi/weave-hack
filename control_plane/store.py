@@ -111,12 +111,12 @@ def revoke_policy(principal: str, skill: str) -> dict:
     state.set_policy(principal, allowed)
     audit.record("revoke_policy", principal=principal, skill=skill,
                  allowed=sorted(allowed))
-    sid = state.get_principal_session(principal)
-    if sid and state.get_session(sid) is not None:
-        try:
-            _sync_session_with_policy(sid, principal, sorted(allowed))
-        except CPError:
-            pass
+    for sid in state.all_principal_session_ids(principal):
+        if state.get_session(sid) is not None:
+            try:
+                _sync_session_with_policy(sid, principal, sorted(allowed))
+            except CPError:
+                pass
     return {"principal": principal, "revoked": skill,
             "allowed_skills": sorted(allowed)}
 
@@ -160,7 +160,7 @@ def open_session(principal: str, requested_skills: list[str],
             if s.get("user_id") == user_id:
                 _sync_session_with_policy(sid, principal, requested_skills)
                 s = get_session(sid)
-                if not s["authorized"]:
+                if not s["authorized"] and not s.get("bootstrap"):
                     raise CPError(f"principal {principal!r} has no authorized skills "
                                   f"in reused session {sid} (policy: "
                                   f"{sorted(state.get_policy(principal))})")
@@ -207,6 +207,36 @@ def _sync_session_with_policy(session_id: str, principal: str,
             _grant_into_session(skill, session_id)
 
 
+def _create_bootstrap_session(principal: str, requested_skills: list[str],
+                              user_id: str | None, scope: str | None) -> dict:
+    """Session with no tool grants yet — worker can REQUEST skills into it."""
+    denied = list(requested_skills)
+    style_id = state.get_personalization(user_id) if user_id else None
+    personalized = style_id is not None
+    sid = f"sess-{uuid.uuid4().hex[:8]}"
+    controller_id = _compose_ids([style_id], f"{sid}-ctrl") if style_id else None
+    state.set_session(sid, {
+        "principal": principal,
+        "authorized": set(),
+        "capability": set(),
+        "controller_id": controller_id,
+        "user_id": user_id,
+        "personalized": personalized,
+        "bootstrap": True,
+    })
+    audit.record("open_session", session_id=sid, principal=principal,
+                 authorized=[], denied=denied, capability=[],
+                 user_id=user_id, personalized=personalized,
+                 controller_id=controller_id, bootstrap=True)
+    state.set_principal_session(principal, sid, scope)
+    return {
+        "session_id": sid, "principal": principal, "authorized": [],
+        "denied": denied, "capability": [],
+        "user_id": user_id, "personalized": personalized,
+        "controller_id": controller_id, "reused": False, "bootstrap": True,
+    }
+
+
 def _create_session(principal: str, requested_skills: list[str],
                     compose_skills: list[str] | None = None,
                     user_id: str | None = None,
@@ -216,8 +246,7 @@ def _create_session(principal: str, requested_skills: list[str],
     authorized = [s for s in requested_skills if s in allowed]
     denied = [s for s in requested_skills if s not in allowed]
     if not authorized:
-        raise CPError(f"principal {principal!r} authorized for none of "
-                      f"{requested_skills} (allowed: {sorted(allowed)})")
+        return _create_bootstrap_session(principal, requested_skills, user_id, scope)
     # `capability` = what the session controller is actually composed from (the
     # model-level reach). Normally this equals the authorized set, so the model
     # simply cannot do anything it isn't allowed to. compose_skills lets a caller
@@ -240,7 +269,8 @@ def _create_session(principal: str, requested_skills: list[str],
     controller_id = _compose_ids(compose_ids, f"{sid}-ctrl")
     state.set_session(sid, {"principal": principal, "authorized": set(authorized),
                             "capability": set(capability), "controller_id": controller_id,
-                            "user_id": user_id, "personalized": personalized})
+                            "user_id": user_id, "personalized": personalized,
+                            "bootstrap": False})
     audit.record("open_session", session_id=sid, principal=principal,
                  authorized=authorized, denied=denied, capability=sorted(capability),
                  user_id=user_id, personalized=personalized, controller_id=controller_id)
@@ -390,10 +420,19 @@ def _grant_into_session(skill: str, session_id: str | None) -> str | None:
     s = state.get_session(session_id)
     if s is None or skill in s.get("authorized", set()):
         return None
+    skill_ctrl = state.get_skill(skill)
     new_id = f"{session_id}-ctrl-add-{uuid.uuid4().hex[:4]}"
-    res = track_a.compose([s["controller_id"], state.get_skill(skill)], [1.0, 1.0], new_id=new_id)
+    base = s.get("controller_id")
+    if base:
+        res = track_a.compose([base, skill_ctrl], [1.0, 1.0], new_id=new_id)
+    else:
+        user_id = s.get("user_id")
+        style_id = state.get_personalization(user_id) if user_id else None
+        ids = ([style_id] if style_id else []) + [skill_ctrl]
+        res = track_a.compose(ids, [1.0] * len(ids), new_id=new_id)
     s["controller_id"] = res["controller_id"]
     s["authorized"].add(skill)
+    s["bootstrap"] = False
     cap = s.get("capability")
     if isinstance(cap, set):
         cap.add(skill)
@@ -464,10 +503,11 @@ def _decide_locked(request_id: str, *, approve: bool, decided_by: str) -> dict:
         else:
             raise CPError(f"cannot approve {skill!r}: not registered and no "
                           "training examples were supplied to mint it")
-    # Grant policy (idempotent union) then compose into the live session.
+    # Grant policy only when the skill is newly allowed for this principal.
     current = state.get_policy(principal)
-    state.set_policy(principal, current | {skill})
-    audit.record("set_policy", principal=principal, allowed=sorted(current | {skill}))
+    if skill not in current:
+        state.set_policy(principal, current | {skill})
+        audit.record("set_policy", principal=principal, allowed=sorted(current | {skill}))
     composed = _grant_into_session(skill, rec.get("session_id"))
     rec.update(status="approved", decided_by=decided_by, controller_id=composed)
     state.set_request(request_id, rec)

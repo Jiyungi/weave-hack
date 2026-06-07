@@ -73,8 +73,8 @@ class ChatTurn(BaseModel):
 
 class RunReq(BaseModel):
     task: str
-    max_delegations: int = 4
-    worker_max_steps: int = 4
+    max_delegations: int = 6
+    worker_max_steps: int = 6
     worker_max_new_tokens: int = 32
     ensure_seeded: bool = True
     user_id: str | None = None

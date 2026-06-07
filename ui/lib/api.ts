@@ -311,19 +311,3 @@ export type RegisterExternalBody = {
   body_template?: string;
   encode_arg?: boolean;
 };
-
-/** Training examples matching the original dashboard seed. */
-export const SKILL_TRAIN = {
-  weather: [
-    "Paris", "Tokyo", "Lima", "Cairo", "Oslo", "Accra", "Quito", "Hanoi",
-  ].map((c) => ({
-    prompt: `User: what's the weather in ${c}?\nAssistant:`,
-    completion: ` weather("${c}")`,
-  })),
-  calendar: [
-    "2026-06-06", "2026-07-01", "2026-08-15", "2026-09-30", "2026-12-25",
-  ].map((d) => ({
-    prompt: `User: any events on ${d}?\nAssistant:`,
-    completion: ` calendar("${d}")`,
-  })),
-};
