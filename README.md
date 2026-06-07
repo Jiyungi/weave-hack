@@ -8,9 +8,32 @@ OpenMirror treats **both** personalization and permissions as the same object: *
 
 Built on [NTK-Mirror](https://github.com/leochlon/ntkmirror) skill arithmetic — LoRA can't subtract cleanly; prompts can't revoke cleanly. This can.
 
-**Sponsor integrations:** [Redis](https://redis.io) (required state + audit), [Weave / W&B](https://wandb.ai/godsonajodo2020-microsoft/OpenMirror/overview) (tracing + proof), [CopilotKit](https://copilotkit.ai) (agent chat + HITL in the Next.js dashboard), MCP (external tool registration), OpenAI optional (memory curation before mint).
+---
 
-**Demo video:** [Google Drive](https://drive.google.com/drive/folders/1cMMrqpS31PtUyuELDcg8pZwPFppcR54k?usp=sharing)
+## Why not LoRA, full fine-tune, or context memory?
+
+Most agent stacks mix **who you are** and **what you can do** into one blob — then try to govern it with prompts or policy files. That works until you need to **revoke** something cleanly.
+
+| Approach | Personalization | Tool / capability control | Revoke a skill mid-session | Delete raw logs after learning |
+|----------|-----------------|---------------------------|----------------------------|----------------------------------|
+| **Growing context** | Re-read chat history every turn | System prompt + tool list | Remove from prompt only — model may still "remember" from prior turns; tokens grow forever | No — history is the memory |
+| **Prompt / policy guards** | Instructions in system message | Allowlists, "don't call X" | Policy change does not remove weights; jailbreaks and instruction drift remain | N/A |
+| **Single LoRA / fine-tune** | Often merged with task adapters | Capabilities baked into one delta | **Cannot subtract** — merged adapters interfere; disabling a tool in config does not un-learn it from weights | Retrain or keep data |
+| **OpenMirror (NTK-Mirror)** | Separate `user_style` controller | Separate per-tool controllers (~200 KB each) | **Compose (+1) / subtract (−1)** — revoking `weather` removes that controller from the session composition; emission changes at the weight level | Yes — consolidate → mint → delete logs |
+
+**What is novel:** personalization and authorization use the **same composable primitive**. A style controller and a `python` controller are both small NTK-Mirror weights on a **frozen** base model. At session open you add only what is authorized; on revoke you subtract that controller without retraining and without touching the user's style controller.
+
+That is structurally different from fine-tuning:
+
+- **Fine-tune / LoRA** merges behavior into one adapter. You cannot cleanly remove "weather" from a multi-skill LoRA without retraining or accepting capability bleed. Policy revoke is config-only — the model may still emit the tool.
+- **Context memory** cannot revoke knowledge already in the transcript; you can only stop sending it, at rising cost and with leakage across turns.
+- **OpenMirror** makes revoke **operational**: subtract the tool controller, runtime guard blocks the emit, audit records the block — behavior changes in the same session, demo-able on video.
+
+Separate adapters for HOW vs WHAT (see below) avoid the usual failure mode of training one fine-tune on mixed personality + tool examples, where revoking one capability is impossible without damaging the rest.
+
+**Sponsor integrations:** Redis (required), Weave/W&B (tracing), CopilotKit (dashboard), MCP (external tools), OpenAI optional (curation). See [**Partner technologies**](#partner-technologies) for concrete usage.
+
+**Demo video:** [Google Drive](https://drive.google.com/drive/folders/1cMMrqpS31PtUyuELDcg8pZwPFppcR54k?usp=sharing) · **Weave project:** [wandb.ai/.../OpenMirror](https://wandb.ai/godsonajodo2020-microsoft/OpenMirror/overview)
 
 ---
 
@@ -53,6 +76,76 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · editable source: 
 The frozen **7B + composed NTK controllers** govern tool emission; the **14B brain** delegates across role workers.
 
 **WeaveSelf reference:** `ml/weaveself/` (merged from `main`) holds the original consolidation research code; OpenMirror's production path mints style controllers via the NTK engine only. Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Adapter contract: [`PERSONALIZATION.md`](PERSONALIZATION.md).
+
+---
+
+## Partner technologies
+
+What each sponsor tool is **for** in the OpenMirror stack — the infrastructure role, not an implementation walkthrough.
+
+### Redis (required — persistence + audit)
+
+Redis is the **system of record** for everything that must survive restarts and be shared across services. Without it, the control plane does not come up.
+
+**What lives in Redis:**
+
+- **Capability registry** — which tool controllers exist and which agents are allowed to use them
+- **Live sessions** — what is composed into each agent session right now, including mid-session revokes
+- **Personalization index** — which `user_style` controller belongs to which user
+- **Memory buffer** — raw chat turns waiting for overnight consolidation (deleted after mint)
+- **Approval queue** — pending capability requests when human-in-the-loop is on
+- **Audit stream** — append-only log of grants, blocks, revokes, approvals, and memory events that powers the dashboard Audit panel
+
+**Where it sits:** between the orchestrator, control plane, and dashboard. Every chat turn, tool allow/block, revoke, and consolidate flows through Redis so multiple workers and UI clients see the same governance state.
+
+### Weave / W&B (observability + proof)
+
+Weave is the **inspectability layer** across our distributed local stack (orchestrator → control plane → NTK engine → memory).
+
+**What we trace:**
+
+- Multi-agent runs (plan → delegate → worker loops → FINAL)
+- Session open/compose and revoke/subtract on the control plane
+- Tool emission at the runtime guard (allowed vs blocked)
+- Controller minting and memory consolidation
+
+Traces span process boundaries so a single run shows up as one tree — useful for demos, evals, and proving that grant/revoke actually changes behavior rather than only changing config. Project: [OpenMirror on W&B](https://wandb.ai/godsonajodo2020-microsoft/OpenMirror/overview)
+
+### CopilotKit (dashboard + human-in-the-loop)
+
+CopilotKit powers the **operator-facing agent UI** on top of our custom Next.js dashboard.
+
+**What it provides:**
+
+- The conversational sidebar for driving the platform in natural language
+- Live read access to governance state, audit tail, tool catalog, and worker policies
+- Callable actions that mirror the dashboard: seed skills, set policies, open sessions, run the orchestrator, register tools, revoke capabilities
+
+The main product surface (chat, capabilities, approvals, audit, memory) is custom UI; CopilotKit adds an agent-native control channel wired to the **local 14B brain**, not a cloud default. Human approve/deny for new capabilities works the same whether the request came from chat, the orchestrator, or the copilot.
+
+### MCP (external tool plane)
+
+MCP is how **third-party and out-of-repo tools** enter the same governed pipeline as built-in skills (weather, python, stock_price).
+
+**Infrastructure role:**
+
+- Discover tools advertised by an external MCP server
+- Register them as first-class executors at runtime (no redeploy)
+- Mint a narrow NTK controller for each, grant to role workers, enforce via the same control plane and audit path as native tools
+
+This lets OpenMirror grow its capability surface through standard MCP servers rather than hard-coding every integration. HTTP URL adapters use the same registration path for non-MCP endpoints.
+
+### OpenAI (optional — memory curation)
+
+OpenAI is used **only upstream of personalization**, not for runtime agent inference (that stays on local Qwen2.5).
+
+**Infrastructure role:**
+
+- After users chat, raw `(user, assistant)` turns sit in Redis
+- Before minting a `user_style` controller, an optional OpenAI pass cleans and formats those logs into training pairs (tone/format, not new facts)
+- If OpenAI is unavailable, a local heuristic curator runs instead; consolidation and local mint proceed either way
+
+Runtime planning, tool emission, and orchestration remain fully local-first.
 
 ---
 
