@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 
 from . import config
+from .trace import op
 
 
 class TrackAError(RuntimeError):
@@ -25,16 +26,19 @@ def _post(path: str, body: dict) -> dict:
         raise TrackAError(f"{path} unreachable at {config.TRACK_A_URL} ({e})") from e
 
 
+@op(name="track_a.train")
 def train(task_id: str, examples: list[dict]) -> dict:
     return _post("/train", {"task_id": task_id, "examples": examples})
 
 
+@op(name="track_a.compose")
 def compose(controller_ids: list[str], weights: list[float],
             new_id: str | None = None) -> dict:
     return _post("/compose", {"controller_ids": controller_ids,
                               "weights": weights, "new_id": new_id})
 
 
+@op(name="track_a.execute")
 def execute(controller_id: str | None, prompt: str, max_new_tokens: int) -> dict:
     return _post("/execute", {"controller_id": controller_id,
                               "prompt": prompt, "max_new_tokens": max_new_tokens})

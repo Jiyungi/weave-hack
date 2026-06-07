@@ -11,15 +11,19 @@ from __future__ import annotations
 
 import re
 
+from .trace import op
+
 # Matches a tool invocation like  weather("Berlin")  ->  "weather".
 _TOOL_RE = re.compile(r"([A-Za-z_]\w*)\s*\(")
 
 
+@op(name="guard.extract_tool_calls")
 def extract_tool_calls(text: str) -> list[str]:
     """Ordered, de-duplicated tool names found in a generation."""
     return list(dict.fromkeys(_TOOL_RE.findall(text)))
 
 
+@op(name="guard.authorize_calls")
 def authorize_calls(tool_calls: list[str], authorized_skills: set[str]) -> tuple[list[str], list[str]]:
     """Split detected calls into (allowed, blocked) against the authorized set.
 

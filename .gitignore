@@ -8,3 +8,8 @@ control_plane_audit.jsonl
 # Local venvs
 venv/
 .venv/
+
+# Secrets / local environment (never commit API keys)
+.env
+*.env
+!.env.example

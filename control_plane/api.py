@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from . import config, store
+from . import config, store, trace
 from .audit import audit
 from .store import CPError
 from .track_a import TrackAError
@@ -19,6 +19,12 @@ from .schemas import (ActReq, PersonalizeReq, PolicyReq, RegisterSkillReq,
 app = FastAPI(title="NTK-Mirror Control Plane", version="0.1")
 
 _DASHBOARD = Path(__file__).parent / "static" / "dashboard.html"
+
+
+@app.on_event("startup")
+def _start_tracing() -> None:
+    """Turn on Weave tracing if it's installed and configured (no-op otherwise)."""
+    trace.init()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -43,6 +49,7 @@ def health():
     return {
         "track_a_url": config.TRACK_A_URL,
         "audit_backend": audit.backend,
+        "weave_tracing": trace.enabled(),
         "n_skills": len(snap["skills"]),
         "n_policies": len(snap["policies"]),
         "n_sessions": len(snap["sessions"]),

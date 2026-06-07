@@ -11,6 +11,7 @@ import uuid
 from . import track_a
 from .audit import audit
 from .runtime import authorize_calls, extract_tool_calls
+from .trace import op
 
 
 class CPError(RuntimeError):
@@ -27,12 +28,14 @@ _personalization: dict[str, str] = {}
 _sessions: dict[str, dict] = {}
 
 
+@op(name="cp.register_skill")
 def register_skill(skill: str, controller_id: str) -> dict:
     _skills[skill] = controller_id
     audit.record("register_skill", skill=skill, controller_id=controller_id)
     return {"skill": skill, "controller_id": controller_id}
 
 
+@op(name="cp.train_skill")
 def train_skill(skill: str, examples: list[dict]) -> dict:
     """Train a controller on Track A and register it under `skill` in one step."""
     res = track_a.train(skill, examples)
@@ -40,6 +43,7 @@ def train_skill(skill: str, examples: list[dict]) -> dict:
     return {"skill": skill, **res}
 
 
+@op(name="cp.set_policy")
 def set_policy(principal: str, allowed_skills: list[str]) -> dict:
     unknown = [s for s in allowed_skills if s not in _skills]
     if unknown:
@@ -49,6 +53,7 @@ def set_policy(principal: str, allowed_skills: list[str]) -> dict:
     return {"principal": principal, "allowed_skills": sorted(_policy[principal])}
 
 
+@op(name="cp.personalize")
 def personalize(user_id: str, examples: list[dict]) -> dict:
     """Mint/refresh a user's personalization (style) adapter via Track A.
 
@@ -69,6 +74,7 @@ def _compose_ids(ids: list[str], controller_id: str) -> str:
     return res["controller_id"]
 
 
+@op(name="cp.open_session")
 def open_session(principal: str, requested_skills: list[str],
                  compose_skills: list[str] | None = None,
                  user_id: str | None = None) -> dict:
@@ -117,6 +123,7 @@ def get_session(session_id: str) -> dict:
     return s
 
 
+@op(name="cp.act")
 def act(session_id: str, prompt: str, max_new_tokens: int) -> dict:
     s = get_session(session_id)
     out = track_a.execute(s["controller_id"], prompt, max_new_tokens)
@@ -139,6 +146,7 @@ def act(session_id: str, prompt: str, max_new_tokens: int) -> dict:
     }
 
 
+@op(name="cp.revoke")
 def revoke(session_id: str, skill: str) -> dict:
     s = get_session(session_id)
     if skill not in s["authorized"]:

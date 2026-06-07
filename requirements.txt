@@ -18,3 +18,9 @@ bitsandbytes>=0.43        # QLoRA 4-bit (GPU only)
 fastapi>=0.111
 uvicorn[standard]>=0.30
 pydantic>=2.7
+
+# Optional observability: W&B Weave traces the control plane (train -> compose ->
+# act -> guard -> revoke). The integration is a no-op if this is absent or you
+# aren't logged in, so it never affects the core demo. Enable with `pip install
+# weave` + `wandb login`; disable with WEAVE_DISABLE=1.
+weave>=0.51  # optional
