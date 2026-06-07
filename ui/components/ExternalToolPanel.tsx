@@ -15,8 +15,12 @@ export function ExternalToolPanel() {
 
   // MCP discovery
   const [serverUrl, setServerUrl] = useState("");
+  const [token, setToken] = useState("");
   const [discovered, setDiscovered] = useState<McpToolInfo[]>([]);
   const [discovering, setDiscovering] = useState(false);
+
+  const authHeaders = () =>
+    token.trim() ? { Authorization: `Bearer ${token.trim()}` } : undefined;
 
   // HTTP form
   const [httpName, setHttpName] = useState("");
@@ -36,9 +40,14 @@ export function ExternalToolPanel() {
     setDiscovered([]);
     setStatus("listing tools…");
     try {
-      const r = await ag.mcpList(serverUrl.trim());
+      const r = await ag.mcpList(serverUrl.trim(), authHeaders());
       setDiscovered(r.tools);
-      setStatus(`found ${r.tools.length} tool(s)`);
+      if (r.server_url && r.server_url !== serverUrl.trim()) {
+        setServerUrl(r.server_url);
+        setStatus(`found ${r.tools.length} tool(s) at ${r.server_url}`);
+      } else {
+        setStatus(`found ${r.tools.length} tool(s)`);
+      }
     } catch (e) {
       setStatus(`error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -58,6 +67,7 @@ export function ExternalToolPanel() {
         server_url: serverUrl.trim(),
         remote_name: t.name,
         arg_key: t.primary_arg,
+        headers: authHeaders(),
         grants: { "exec-assistant": [t.name] },
       });
       setStatus(`registered ${t.name}`);
@@ -143,6 +153,12 @@ export function ExternalToolPanel() {
               {discovering ? "listing…" : "Discover"}
             </Btn>
           </div>
+          <Label>Bearer token (optional — for OAuth-protected servers)</Label>
+          <Input
+            value={token}
+            onChange={setToken}
+            placeholder="paste an access token; sent as Authorization: Bearer …"
+          />
           {discovered.length > 0 && (
             <div className="mt-3 flex flex-col gap-1.5">
               {discovered.map((t) => {

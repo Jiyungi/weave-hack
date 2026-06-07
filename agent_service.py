@@ -224,9 +224,16 @@ def register_tool(req: RegisterToolReq):
 def mcp_list(req: McpListReq):
     """List the tools an MCP server advertises (no registration yet)."""
     try:
-        raw = adapters.mcp_list_tools(req.server_url, req.headers)
+        resolved, raw = adapters.discover(req.server_url, req.headers)
+    except adapters.McpAuthError as e:
+        return JSONResponse(status_code=401, content={"detail": str(e)})
     except adapters.AdapterError as e:
         return JSONResponse(status_code=502, content={"detail": str(e)})
+    except Exception as e:  # noqa: BLE001 — surface the real cause, never a bare 500
+        return JSONResponse(
+            status_code=502,
+            content={"detail": f"MCP discover failed: {type(e).__name__}: {e}"},
+        )
     out = []
     for t in raw:
         schema = t.get("inputSchema") or t.get("input_schema")
@@ -236,7 +243,7 @@ def mcp_list(req: McpListReq):
             "primary_arg": adapters.primary_arg(schema),
             "input_schema": schema,
         })
-    return {"server_url": req.server_url, "tools": out}
+    return {"server_url": resolved, "tools": out}
 
 
 @app.post("/register_external")
@@ -269,6 +276,11 @@ def register_external(req: RegisterExternalReq):
         tool = adapters.register_config(cfg)
     except adapters.AdapterError as e:
         return JSONResponse(status_code=400, content={"detail": str(e)})
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"register failed: {type(e).__name__}: {e}"},
+        )
     result = cp.register_tool(
         skill=tool.name,
         examples=tool.training_examples(),

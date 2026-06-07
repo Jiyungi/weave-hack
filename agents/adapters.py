@@ -37,6 +37,10 @@ class AdapterError(RuntimeError):
     """An external adapter (MCP or HTTP) failed."""
 
 
+class McpAuthError(AdapterError):
+    """The MCP server requires authorization (401/403) — needs a bearer token."""
+
+
 # ---------------------------------------------------------------------------
 # MCP over Streamable HTTP
 # ---------------------------------------------------------------------------
@@ -137,16 +141,55 @@ def _with_session(url: str, headers: dict | None, sid: str | None) -> dict:
 
 def mcp_list_tools(url: str, headers: dict | None = None) -> list[dict]:
     """Return the MCP server's advertised tools: [{name, description, inputSchema}]."""
-    sid = _session(url, headers)
-    _, ct, raw = _post_jsonrpc(
-        url,
-        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-        _with_session(url, headers, sid),
-    )
+    try:
+        sid = _session(url, headers)
+        _, ct, raw = _post_jsonrpc(
+            url,
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            _with_session(url, headers, sid),
+        )
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")[:300]
+        if e.code in (401, 403):
+            www = e.headers.get("WWW-Authenticate", "")
+            raise McpAuthError(
+                f"MCP server {url} requires authorization ({e.code}). "
+                f"Provide a bearer token in the token field. {www}".strip()
+            ) from e
+        raise AdapterError(
+            f"MCP server {url} -> {e.code} {e.reason}. "
+            f"Check the URL points at the Streamable-HTTP endpoint "
+            f"(often '/mcp'). Body: {detail!r}"
+        ) from e
     msg = _parse_rpc(ct, raw)
     if msg.get("error"):
         raise AdapterError(f"MCP tools/list error: {msg['error']}")
     return msg.get("result", {}).get("tools", [])
+
+
+def discover(url: str, headers: dict | None = None) -> tuple[str, list[dict]]:
+    """List tools, probing common endpoint paths if the given URL doesn't work.
+
+    Returns ``(resolved_url, tools)`` so the caller registers against the URL that
+    actually responded (e.g. the user typed the host, the server lives at /mcp).
+    """
+    base = url.rstrip("/")
+    candidates = [url]
+    for suffix in ("/mcp", "/sse", "/http", "/api/mcp"):
+        if not base.endswith(suffix):
+            candidates.append(base + suffix)
+    last: Exception | None = None
+    for cand in candidates:
+        try:
+            return cand, mcp_list_tools(cand, headers)
+        except McpAuthError:
+            # A 401/403 means we hit the right endpoint — it just needs auth.
+            # Don't keep probing other paths; report the auth requirement.
+            raise
+        except AdapterError as e:
+            last = e
+            continue
+    raise last or AdapterError(f"could not reach an MCP endpoint at {url}")
 
 
 def _render_mcp_content(result: dict) -> str:
