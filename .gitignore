@@ -49,3 +49,6 @@ ml/.hf-cache/
 .DS_Store
 Thumbs.db
 .vscode/
+
+pytest_out.txt
+pytest_err.txt
