@@ -1,5 +1,6 @@
-# `src/runtime` — CopilotKit Node/TS runtime (reserved)
+# `src/runtime` - CopilotKit Node/TS runtime
 
-Reserved for the CopilotKit runtime and the AG-UI bridge to the Python LangGraph
-agent. Implemented by later tasks (task 10.4). Intentionally empty for now so the
-Track 0 contract work in task 1.7 does not scaffold the full app.
+`ag-ui-bridge.ts` implements the AG-UI SSE bridge boundary used by the
+CopilotKit runtime. It streams Python LangGraph agent events, records connection
+errors when the bridge is unavailable, and clears them after a successful stream
+connection.

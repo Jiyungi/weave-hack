@@ -1,5 +1,8 @@
-# `src/frontend` — CopilotKit React app (reserved)
+# `src/frontend` - CopilotKit React app surface
 
-Reserved for the CopilotKit React chat view and the proof Dashboard
-(adapter library, confusion-matrix heatmap, base-vs-adapter examples, size chart).
-Implemented by later tasks (tasks 10.1–10.2). Intentionally empty for now.
+Track C currently exposes framework-independent chat and dashboard modules so the
+CopilotKit React shell can wire them without changing contract behavior:
+
+- `chat.ts`: Unit selection, `/generate` calls, and message state.
+- `eval-results.ts`: adapter-library filtering, heatmap view model, examples, and size chart.
+- `mock-eval-results.ts`: fallback demo fixture for task 10.5.
