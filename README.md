@@ -71,6 +71,8 @@ brev port-forward <instance> --port 3000:3000   # laptop → :3000
 
 Full collaborator guide (Brev setup, overnight shutdown, controller backup): [`docs/COLLABORATOR_GUIDE.md`](docs/COLLABORATOR_GUIDE.md).
 
+Head-to-head eval (OpenMirror vs OpenClaw vs Hermes): [`docs/HEAD_TO_HEAD_EVAL.md`](docs/HEAD_TO_HEAD_EVAL.md).
+
 Consolidate a user's chats (after logging interactions via UI or `POST /memory/log`):
 
 ```bash
